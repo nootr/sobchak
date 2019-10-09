@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+# Sobchak
+# An OpenStack instance scheduling optimizer.
+
+import logging
+import argparse
+
+
+class HypervisorList(object):
+    """HypervisorList
+
+    An iterable object of Hypervisor objects. Fetches an Hypervisor-VM inventory
+    from either a given file or using the OpenStack client.
+    """
+    def __init__(self, bar):
+        logging.debug('Initializing Foo')
+        self._bar = bar
+
+    @property
+    def bar(self):
+        """bar
+
+        It is good practice to add a bit of documentation to each method and
+        class.
+        """
+        return self._bar
+
+    @bar.setter
+    def bar(self, bar):
+        self._bar = bar
+
+
+class Hypervisor(object):
+    """Hypervisor
+
+    An Hypervisor object contains information about its available resources and
+    the VMs it hosts.
+    """
+    def __init__(self, bar):
+        logging.debug('Initializing Foo')
+        self._bar = bar
+
+    @property
+    def bar(self):
+        """bar
+
+        It is good practice to add a bit of documentation to each method and
+        class.
+        """
+        return self._bar
+
+    @bar.setter
+    def bar(self, bar):
+        self._bar = bar
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='An OpenStack instance scheduling optimizer.')
+
+    parser.add_argument('-i', '--datafile', action='store',
+            help='Input file containing Hypervisor-VM inventory.')
+    parser.add_argument('-o', '--outputfile', action='store',
+            help='Output file containing list of migrations.')
+    parser.add_argument('-f', '--format', action='store',
+            help='Output format (csv, json)')
+    parser.add_argument('-d', '--debug',
+            help='Enable debug', action='store_true')
+
+    return parser.parse_args()
+
+
+def run(datafile, outputfile, format, debug=False):
+    if debug:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s %(levelname)-8s %(message)s'
+        )
+
+if __name__ == "__main__":
+    args = parse_args()
+    kwargs = vars(args)
+    run(**kwargs)
