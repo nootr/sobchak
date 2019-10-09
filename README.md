@@ -19,13 +19,17 @@ Sobchak tries to solve this problem by leaving compute nodes with available
 memory and VCPU resources in a certain ratio so that VMs with a common VCPU/RAM
 ratio can fill the remaining gap.
 
+![Hypervisor after naive instance scheduling](img/README-1.png)
+
+_A hypervisor after naive instance scheduling._
+
 A great way to look at the problem is by looking at VCPU/memory pairs as
 two-dimensional vectors; we must try to get the sum of VM vectors to match the
 hypervisor vector as close as possible to distribute all available resources.
 This can be achieved by predicting the slope/direction of the end of the VM
 vector route and steering towards an extension of that slope.
 
-![Naive instance scheduling](img/README-1.png)
+![Hypervisor after predictive instance scheduling](img/README-2.png)
 
 _The straight line represents the direction of the most common RAM/VCPUs ratio
 among smaller VMs._
@@ -37,7 +41,9 @@ difference of the angles - let's call it the *relative angle* - will tell us how
 well the hypervisor is on its way to use all resources (i.e. its absolute value)
 and the direction it should change to (i.e. its sign).
 
-![Predictive instance scheduling](img/README-2.png)
+![Relative angle](img/README-3.png)
+
+_The yellow angle represents the "relative angle"._
 
 The bigger the relative angle, the more difficult it is to reach the angle
 towards an optimal solution. We can use this number to find out which hypervisor
@@ -52,7 +58,7 @@ distributed.
 Now that we know which hypervisors should re-distribute their resources, we can
 construct a list of migrations to patch things up.
 
-- Load Hypervisor-VM inventory from JSON-file.
+- Load Hypervisor-VM inventory from JSON-file or using OpenStack CLI calls.
 - Until no improvement has been made:
   - Sort hypervisors on absolute score.
   - Try for each hypervisor (from highest absolute score to lowest):
@@ -61,8 +67,8 @@ construct a list of migrations to patch things up.
     - Make a list of the VMs on both hypervisors.
     - Sort VMs by relative angle.
     - For each VM (from highest relative angle to lowest):
-      - Calculate the difference between the hypervisor score and VM relative angle
-        for each hypervisor.
+      - Calculate the difference between the hypervisor score and VM relative
+        angle for each hypervisor.
       - Place VM under hypervisor with biggest difference (place on original
         hypervisor if scores are equal).
     - Check if improvement was made. If so: generate migration list & break
