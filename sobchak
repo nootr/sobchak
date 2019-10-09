@@ -7,52 +7,64 @@ import logging
 import argparse
 
 
-class HypervisorList(object):
+class HypervisorList(List):
     """HypervisorList
 
-    An iterable object of Hypervisor objects. Fetches an Hypervisor-VM inventory
-    from either a given file or using the OpenStack client.
+    An iterable object containing Hypervisor objects. Fetches an Hypervisor-VM
+    inventory from either a given file or using the OpenStack client.
     """
-    def __init__(self, bar):
-        logging.debug('Initializing Foo')
-        self._bar = bar
+    def __init__(self):
+        self = self._fetch_hypervisors()
 
-    @property
-    def bar(self):
-        """bar
+    def _fetch_hypervisors(self):
+        """_fetch_hypervisors
 
-        It is good practice to add a bit of documentation to each method and
-        class.
+        Fetches a Hypervisor-VM inventory using the OpenStack CLI client and
+        returns it as a list.
         """
-        return self._bar
-
-    @bar.setter
-    def bar(self, bar):
-        self._bar = bar
+        pass
 
 
 class Hypervisor(object):
     """Hypervisor
 
-    An Hypervisor object contains information about its available resources and
+    A Hypervisor object contains information about its available resources and
     the VMs it hosts.
     """
-    def __init__(self, bar):
-        logging.debug('Initializing Foo')
-        self._bar = bar
+    def __init__(self):
+        self.vms = _fetch_data()
+        self.vcpus, self.ram = self._fetch_resources()
 
-    @property
-    def bar(self):
-        """bar
+    def _fetch_data(self):
+        """_fetch_data
 
-        It is good practice to add a bit of documentation to each method and
-        class.
+        Fetches a list of VMs using the OpenStack CLI client and converts its
+        output into a list of VM objects.
         """
-        return self._bar
+        pass
 
-    @bar.setter
-    def bar(self, bar):
-        self._bar = bar
+    def _fetch_resources(self):
+        """_fetch_resources
+
+        Fetches the Hypervisor resources using the OpenStack CLI client.
+        """
+        pass
+
+
+class VM(object):
+    """VM
+
+    A VM object contains information about the resources needed for the VM.
+    """
+    def __init__(self)
+        self.vcpus, self.ram = self._fetch_resources()
+
+    def _fetch_resources(self):
+        """_fetch_resources
+
+        Fetches the flavor data of this VM using the OpenStack CLI client.
+        """
+        pass
 
 
 def parse_args():
