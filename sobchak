@@ -13,6 +13,20 @@ from json import JSONDecodeError
 from subprocess import CalledProcessError, check_output, STDOUT
 
 
+def cache(func):
+    """cache
+
+    A function decorator used to cache objects which are initialized using only
+    an identifier (e.g. name or UUID).
+    """
+    _cache = {}
+    def func_wrapper(obj, identifier):
+        if identifier not in _cache:
+            _cache[identifier] = func(obj, identifier)
+        return _cache[identifier]
+    return func_wrapper
+
+
 def execute_openstack_command(command, timeout=5):
     """execute_openstack_command
 
@@ -142,20 +156,15 @@ class VM(object):
         return self._flavor.ram
 
 
-flavorcache = {}
-
 class Flavor(object):
     """Flavor
 
     A Flavor object contains information about the RAM and VCPUs it represents.
     """
+    @cache
     def __init__(self, name):
-        if name in flavorcache:
-            self = flavorcache[name]
-        else:
-            self.name = name
-            self.vcpus, self.ram = self._fetch_resources()
-            flavorcache[name] = self
+        self.name = name
+        self.vcpus, self.ram = self._fetch_resources()
 
     def _fetch_resources(self):
         """_fetch_resources
@@ -183,6 +192,7 @@ def verify_environment():
             logging.debug('Variable not set: %s', variable)
             return False
     return True
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
