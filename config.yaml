@@ -1,0 +1,12 @@
+## config.yaml
+#
+# Sobchak configuration file containing RAM/CPU overcommit values and RAM
+# overhead on Hypervisors.
+#
+
+# Overcommit values
+ram_overcommit: 1.0
+cpu_overcommit: 4.0
+
+# Hypervisor memory overhead (in GBs)
+hypervisor_memory_overhead: 32
