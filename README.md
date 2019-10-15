@@ -47,13 +47,14 @@ _The yellow angle represents the "relative angle"._
 
 The bigger the relative angle, the more difficult it is to reach the angle
 towards an optimal solution. We can use this number to find out which hypervisor
-pairs can be used to "cancel each other out" by exchanging VMs. Note that there
-is one scenario where a high absolute value of a relative angle does not
-represent badly distributed resources; it's when both the assignable memory and
-VCPU's are close to zero. This means that a relative angle should be weighed
-with the sum of two reversed Sigmoid functions on both resources to create a
-*score* which is also small when the hypervisor resources are almost fully
-distributed.
+pairs can be used to "cancel each other out" by exchanging VMs.
+
+Note that there is one scenario where a high absolute value of a relative angle
+does not represent badly distributed resources; it's when both the assignable
+memory and VCPU's are close to zero. This means that a relative angle should be
+weighed with the sum of two reversed Sigmoid functions on both resources to
+create a *score* which is also small when the hypervisor resources are almost
+fully distributed.
 
 Now that we know which hypervisors should re-distribute their resources, we can
 construct a list of migrations to patch things up.

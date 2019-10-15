@@ -5,24 +5,63 @@
 
 import logging
 import argparse
+import os
+import json
+
+from time import sleep
+from json import JSONDecodeError
+from subprocess import CalledProcessError, check_output, STDOUT
 
 
-class HypervisorList(List):
+def execute_openstack_command(command, timeout=5):
+    """execute_openstack_command
+
+    Simply executes an OpenStack command and returns the output which is
+    converted from a JSON string to an object.
+    Raises an exception if the output wasn't in JSON format or if the openstack
+    command returns a non-zero return code after multiple tries.
+    """
+    try:
+        full_command = 'openstack {} -f json'.format(command)
+        logging.info('Executing command: "%s"', full_command)
+        command_split = [x for x in full_command.split(' ') if x]
+        output = check_output(command_split, encoding='utf-8',
+                stderr=STDOUT)
+        return json.loads(output)
+    except (JSONDecodeError, CalledProcessError):
+        if timeout < 60:
+            logging.debug('Command failed, trying again after %d seconds.',
+                timeout)
+            sleep(timeout)
+            execute_openstack_command(command, timeout * 2)
+        else:
+            raise
+
+
+class HypervisorList(list):
     """HypervisorList
 
-    An iterable object containing Hypervisor objects. Fetches an Hypervisor-VM
-    inventory from either a given file or using the OpenStack client.
+    A list containing Hypervisor objects which are fetched using the OpenStack
+    CLI client.
     """
-    def __init__(self):
-        self = self._fetch_hypervisors()
+    def __init__(self, ram_overcommit=1.0, cpu_overcommit=1.0):
+        self = self._fetch_hypervisors(ram_overcommit, cpu_overcommit)
 
-    def _fetch_hypervisors(self):
+    def _fetch_hypervisors(self, ram_overcommit, cpu_overcommit):
         """_fetch_hypervisors
 
         Fetches a Hypervisor-VM inventory using the OpenStack CLI client and
         returns it as a list.
         """
-        pass
+        try:
+            hypervisors_data = execute_openstack_command('hypervisor list')
+            return [Hypervisor(
+                x['Hypervisor Hostname'],
+                ram_overcommit,
+                cpu_overcommit) for x in hypervisors_data]
+        except Exception as e:
+            logging.error('Could not fetch hypervisor list: %s', e)
+            exit(1)
 
 
 class Hypervisor(object):
@@ -31,41 +70,119 @@ class Hypervisor(object):
     A Hypervisor object contains information about its available resources and
     the VMs it hosts.
     """
-    def __init__(self):
-        self.vms = _fetch_data()
-        self.vcpus, self.ram = self._fetch_resources()
+    def __init__(self, hostname, ram_overcommit, cpu_overcommit,
+            hypervisor_memory_overhead=32):
+        self.hostname = hostname
+        self.vms = self._fetch_vms()
+        self.vcpus, self.ram = self._fetch_resources(
+                ram_overcommit,
+                cpu_overcommit,
+                hypervisor_memory_overhead)
 
-    def _fetch_data(self):
-        """_fetch_data
+    def _fetch_vms(self):
+        """_fetch_vms
 
         Fetches a list of VMs using the OpenStack CLI client and converts its
         output into a list of VM objects.
         """
-        pass
+        try:
+            command = 'server list --all --host {}'.format(self.hostname)
+            vps_data = execute_openstack_command(command)
+            return [VM(vps['ID']) for vps in vps_data]
+        except Exception as e:
+            logging.error('Could not determine VM list of hypervisor: %s', e)
+            exit(1)
 
-    def _fetch_resources(self):
+    def _fetch_resources(self, ram_overcommit, cpu_overcommit, memory_overhead):
         """_fetch_resources
 
-        Fetches the Hypervisor resources using the OpenStack CLI client.
+        Fetches the Hypervisor resources using the OpenStack CLI client and
+        returns the total number of available VCPUs and RAM (GBs).
         """
-        pass
+        try:
+            command = 'hypervisor show {}'.format(self.hostname)
+            data = execute_openstack_command(command)
+            vcpus = data['vcpus']*cpu_overcommit
+            ram = data['memory_mb']*ram_overcommit/1024 - memory_overhead
+            return vcpus, ram
+        except Exception as e:
+            logging.error('Could not determine Hypervisor resources: %s', e)
+            exit(1)
 
 
 class VM(object):
     """VM
 
-    A VM object contains information about the resources needed for the VM.
+    A VM object contains information about its flavor.
     """
-    def __init__(self)
-        self.vcpus, self.ram = self._fetch_resources()
+    def __init__(self, id):
+        self.id = id
+        self._flavor = self._fetch_flavor()
+
+    def _fetch_flavor(self):
+        """_fetch_flavor
+
+        Fetches the flavor data of this VM using the OpenStack CLI client and
+        returns it as a Flavor object.
+        """
+        try:
+            command = 'server show {}'.format(self.id)
+            vm_data = execute_openstack_command(command)
+            return Flavor(vm_data['flavor'].split()[0])
+        except Exception as e:
+            logging.error('Could not determine flavor of VM: %s', e)
+            exit(1)
+
+    @property
+    def vcpus(self):
+        return self._flavor.vcpus
+
+    @property
+    def ram(self):
+        return self._flavor.ram
+
+
+flavorcache = {}
+
+class Flavor(object):
+    """Flavor
+
+    A Flavor object contains information about the RAM and VCPUs it represents.
+    """
+    def __init__(self, name):
+        if name in flavorcache:
+            self = flavorcache[name]
+        else:
+            self.name = name
+            self.vcpus, self.ram = self._fetch_resources()
+            flavorcache[name] = self
 
     def _fetch_resources(self):
         """_fetch_resources
 
-        Fetches the flavor data of this VM using the OpenStack CLI client.
+        Fetches information about the flavor using the OpenStack CLI client and
+        returns the VCPUs and RAM in GBs.
         """
-        pass
+        try:
+            command = 'flavor show {}'.format(self.name)
+            data = execute_openstack_command(command)
+            return data['vcpus'], data['ram']/1024
+        except Exception as e:
+            logging.error('Could not determine resources of flavor: %s', e)
+            exit(1)
 
+
+def verify_environment():
+    """verify_environment
+
+    Check if the user has sourced an OpenStack openrc file, if so, return True.
+    """
+    needed_variables = ['OS_PROJECT_ID', 'OS_PROJECT_NAME']
+    for variable in needed_variables:
+        if variable not in os.environ:
+            logging.debug('Variable not set: %s', variable)
+            return False
+    return True
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -77,18 +194,32 @@ def parse_args():
             help='Output file containing list of migrations.')
     parser.add_argument('-f', '--format', action='store',
             help='Output format (csv, json)')
+    parser.add_argument('--ram-overcommit', action='store', type=float,
+            help='RAM overcommit ratio (default: 1.0)', default=1.0)
+    parser.add_argument('--cpu-overcommit', action='store', type=float,
+            help='CPU overcommit ratio (default: 1.0)', default=1.0)
+    parser.add_argument('--overhead', action='store', type=float,
+            help='Hypervisor memory overhead (GB\'s, default: 32)', default=32)
     parser.add_argument('-d', '--debug',
             help='Enable debug', action='store_true')
 
     return parser.parse_args()
 
 
-def run(datafile, outputfile, format, debug=False):
+def run(datafile, outputfile, format, ram_overcommit, cpu_overcommit, overhead,
+        debug):
     if debug:
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s %(levelname)-8s %(message)s'
         )
+
+    if not verify_environment():
+        logging.error('Please source your OpenStack openrc file!')
+        exit(1)
+
+    hypervisors = HypervisorList()
+
 
 if __name__ == "__main__":
     args = parse_args()
