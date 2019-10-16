@@ -14,18 +14,20 @@ from json import JSONDecodeError
 from subprocess import CalledProcessError, check_output, STDOUT
 
 
-def cache(func):
-    """cache
+def class_cache(obj):
+    """class_cache
 
-    A function decorator used to cache objects which are initialized using only
+    A Class decorator used to cache objects which are initialized using only
     an identifier (e.g. name or UUID).
     """
-    _cache = {}
-    def func_wrapper(obj, identifier):
-        if identifier not in _cache:
-            _cache[identifier] = func(obj, identifier)
-        return _cache[identifier]
-    return func_wrapper
+    cache = {}
+
+    def _wrapper(identifier):
+        if identifier not in cache:
+            cache[identifier] = obj(identifier)
+        return cache[identifier]
+
+    return _wrapper
 
 
 def execute_openstack_command(command, timeout=5):
@@ -53,14 +55,15 @@ def execute_openstack_command(command, timeout=5):
             raise
 
 
-class HypervisorList(list):
+class HypervisorList(object):
     """HypervisorList
 
-    A list containing Hypervisor objects which are fetched using the OpenStack
-    CLI client.
+    An object containing Hypervisor objects which are fetched using the
+    OpenStack CLI client.
     """
-    def __init__(self, config={}):
-        self = self._fetch_hypervisors(config)
+    def __init__(self, state={}, config={}):
+        self._hypervisors = self._fetch_hypervisors(config)
+        #TODO: Initialize using a state dict
 
     def _fetch_hypervisors(self, config):
         """_fetch_hypervisors
@@ -75,6 +78,23 @@ class HypervisorList(list):
         except Exception as e:
             logging.error('Could not fetch hypervisor list: %s', e)
             exit(1)
+
+    @property
+    def state(self):
+        """state
+
+        Returns the Hypervisor-VM inventory as a dictionary.
+        """
+        return [hypervisor.dump for hypervisor in self._hypervisors]
+
+    def optimize(self):
+        """optimize
+
+        Generates and returns a list of migrations to improve Hypervisor
+        resource distribution.
+        """
+        # TODO
+        return []
 
 
 class Hypervisor(object):
@@ -122,6 +142,20 @@ class Hypervisor(object):
             logging.error('Could not determine Hypervisor resources: %s', e)
             exit(1)
 
+    @property
+    def dump(self):
+        """dump
+
+        Returns the Hypervisor data as a dictionary.
+        """
+        data = {
+            'hostname': self.hostname,
+            'vcpus': self.vcpus,
+            'ram': self.ram,
+            'vms': [vm.dump for vm in self.vms]
+        }
+        return data
+
 
 class VM(object):
     """VM
@@ -154,13 +188,21 @@ class VM(object):
     def ram(self):
         return self._flavor.ram
 
+    @property
+    def dump(self):
+        """dump
 
+        Returns the VM data as a dictionary.
+        """
+        return { 'id': self.id, 'vcpus': self.vcpus, 'ram': self.ram }
+
+
+@class_cache
 class Flavor(object):
     """Flavor
 
     A Flavor object contains information about the RAM and VCPUs it represents.
     """
-    @cache
     def __init__(self, name):
         self.name = name
         self.vcpus, self.ram = self._fetch_resources()
@@ -169,15 +211,16 @@ class Flavor(object):
         """_fetch_resources
 
         Fetches information about the flavor using the OpenStack CLI client and
-        returns the VCPUs and RAM in GBs.
+        returns the VCPUs and RAM in GBs. Returns (0, 0) and gives a warning
+        when the Flavor could not be determined.
         """
         try:
             command = 'flavor show {}'.format(self.name)
             data = execute_openstack_command(command)
             return data['vcpus'], data['ram']/1024
         except Exception as e:
-            logging.error('Could not determine resources of flavor: %s', e)
-            exit(1)
+            logging.warning('Could not determine resources of flavor: %s', e)
+            return 0, 0
 
 
 def parse_config(filename):
@@ -210,21 +253,17 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='An OpenStack instance scheduling optimizer.')
 
-    parser.add_argument('-i', '--datafile', action='store',
-            help='Input file containing Hypervisor-VM inventory.')
-    parser.add_argument('-o', '--outputfile', action='store',
-            help='Output file containing list of migrations.')
+    parser.add_argument('-s', '--statefile', action='store',
+            help='Statefile containing Hypervisor-VM inventory.')
     parser.add_argument('-c', '--configfile', action='store',
             help='Configuration file.')
-    parser.add_argument('-f', '--format', action='store',
-            help='Output format (csv, json)')
     parser.add_argument('-d', '--debug',
             help='Enable debug', action='store_true')
 
     return parser.parse_args()
 
 
-def run(datafile, outputfile, format, configfile, debug):
+def run(statefile, configfile, debug):
     if debug:
         logging.basicConfig(
             level=logging.DEBUG,
@@ -240,7 +279,26 @@ def run(datafile, outputfile, format, configfile, debug):
         config = parse_config(configfile)
         logging.debug('Loaded config: %s', config)
 
-    hypervisors = HypervisorList(config)
+    hypervisors = None
+
+    if statefile:
+        try:
+            with open(statefile, 'r') as state:
+                hypervisors = HypervisorList(state=json.load(state))
+        except Exception as e:
+            logging.info('Unable to read statefile, using as output: %s', e)
+
+    if not hypervisors:
+        hypervisors = HypervisorList(config)
+        if statefile:
+            try:
+                with open(statefile, 'w+') as state:
+                    json.dump(hypervisors.state, state)
+            except Exception as e:
+                logging.error('Could not write to statefile: %s', e)
+                exit(1)
+
+    print(hypervisors.optimize())
 
 
 if __name__ == "__main__":
