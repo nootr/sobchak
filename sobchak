@@ -298,6 +298,10 @@ def parse_args():
            _|  _|    _|  _|    _|  _|        _|    _|  _|    _|  _|  _|
      _|_|_|      _|_|    _|_|_|      _|_|_|  _|    _|    _|_|_|  _|    _|
 
+> You mark that frame an eight, you're entering a world of pain. A world of
+> pain.
+                                                              ~ Walter Sobchak
+
 Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
 which generates a list of instance migrations to optimally make use of
 hypervisor resources.
