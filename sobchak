@@ -61,9 +61,19 @@ class HypervisorList(object):
     An object containing Hypervisor objects which are fetched using the
     OpenStack CLI client.
     """
-    def __init__(self, state={}, config={}):
-        self._hypervisors = self._fetch_hypervisors(config)
-        #TODO: Initialize using a state dict
+    def __init__(self, state=None, config={}):
+        if state:
+            self._hypervisors = self._parse_state(state)
+        else:
+            self._hypervisors = self._fetch_hypervisors(config)
+
+    def _parse_state(self, state):
+        """_parse_state
+
+        Converts a list from a given dictionary containing all data necessary to
+        a list of Hypervisor objects.
+        """
+        return [Hypervisor(None, state=s) for s in state]
 
     def _fetch_hypervisors(self, config):
         """_fetch_hypervisors
@@ -103,10 +113,24 @@ class Hypervisor(object):
     A Hypervisor object contains information about its available resources and
     the VMs it hosts.
     """
-    def __init__(self, hostname, config={}):
-        self.hostname = hostname
-        self.vms = self._fetch_vms()
-        self.vcpus, self.ram = self._fetch_resources(config)
+    def __init__(self, hostname, state=None, config={}):
+        if state:
+            self.hostname = state['hostname']
+            self.vcpus = state['vcpus']
+            self.ram = state['ram']
+            self.vms = self._parse_state(state['vms'])
+        else:
+            self.hostname = hostname
+            self.vms = self._fetch_vms()
+            self.vcpus, self.ram = self._fetch_resources(config)
+
+    def _parse_state(self, state):
+        """_parse_state
+
+        Converts a list from a given dictionary containing all data necessary to
+        a list of VM objects.
+        """
+        return [VM(None, state=s) for s in state]
 
     def _fetch_vms(self):
         """_fetch_vms
@@ -162,9 +186,15 @@ class VM(object):
 
     A VM object contains information about its flavor.
     """
-    def __init__(self, id):
-        self.id = id
-        self._flavor = self._fetch_flavor()
+    def __init__(self, id, state=None):
+        if state:
+            self.id = state['id']
+            self._vcpus = state['vcpus']
+            self._ram = state['ram']
+            self._flavor = None
+        else:
+            self.id = id
+            self._flavor = self._fetch_flavor()
 
     def _fetch_flavor(self):
         """_fetch_flavor
@@ -182,11 +212,17 @@ class VM(object):
 
     @property
     def vcpus(self):
-        return self._flavor.vcpus
+        if self._flavor:
+            return self._flavor.vcpus
+        else:
+            return self._vcpus
 
     @property
     def ram(self):
-        return self._flavor.ram
+        if self._flavor:
+            return self._flavor.ram
+        else:
+            return self._ram
 
     @property
     def dump(self):
@@ -290,10 +326,6 @@ def run(statefile, configfile, debug):
             format='%(asctime)s %(levelname)-8s %(message)s'
         )
 
-    if not verify_environment():
-        logging.error('Please source your OpenStack openrc file!')
-        exit(1)
-
     config = {}
     if configfile:
         config = parse_config(configfile)
@@ -307,6 +339,10 @@ def run(statefile, configfile, debug):
                 hypervisors = HypervisorList(state=json.load(state))
         except Exception as e:
             logging.info('Unable to read statefile, using as output: %s', e)
+
+    if not hypervisors and not verify_environment():
+        logging.error('Please source your OpenStack openrc file!')
+        exit(1)
 
     if not hypervisors:
         hypervisors = HypervisorList(config)
