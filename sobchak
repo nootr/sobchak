@@ -250,8 +250,22 @@ def verify_environment():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description='An OpenStack instance scheduling optimizer.')
+    """parse_args
+
+    As always, parse given arguments using the usual argparse module and return
+    the parsed args object.
+    """
+    parser = argparse.ArgumentParser(description="""
+       _|_|_|            _|                  _|                  _|
+     _|          _|_|    _|_|_|      _|_|_|  _|_|_|      _|_|_|  _|  _|
+       _|_|    _|    _|  _|    _|  _|        _|    _|  _|    _|  _|_|
+           _|  _|    _|  _|    _|  _|        _|    _|  _|    _|  _|  _|
+     _|_|_|      _|_|    _|_|_|      _|_|_|  _|    _|    _|_|_|  _|    _|
+
+Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
+which generates a list of instance migrations to optimally make use of
+hypervisor resources.
+""", formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('-s', '--statefile', action='store',
             help='Statefile containing Hypervisor-VM inventory.')
@@ -264,6 +278,12 @@ def parse_args():
 
 
 def run(statefile, configfile, debug):
+    """run
+
+    Actually run the program; fetch a Hypervisor-VM inventory and determine
+    which migrations can be executed to improve the current resource
+    distribution.
+    """
     if debug:
         logging.basicConfig(
             level=logging.DEBUG,
