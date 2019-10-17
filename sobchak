@@ -3,6 +3,9 @@
 # Sobchak
 # An OpenStack instance scheduling optimizer.
 
+# TODO: Implement Nova API
+# https://docs.openstack.org/python-novaclient/latest/user/python-api.html
+
 import logging
 import argparse
 import os
@@ -42,13 +45,12 @@ def execute_openstack_command(command, timeout=5):
         full_command = 'openstack {} -f json'.format(command)
         logging.info('Executing command: "%s"', full_command)
         command_split = [x for x in full_command.split(' ') if x]
-        output = check_output(command_split, encoding='utf-8',
-                stderr=STDOUT)
+        output = check_output(command_split, encoding='utf-8', stderr=STDOUT)
         return json.loads(output)
     except (JSONDecodeError, CalledProcessError):
         if timeout < 60:
             logging.debug('Command failed, trying again after %d seconds.',
-                timeout)
+                          timeout)
             sleep(timeout)
             execute_openstack_command(command, timeout * 2)
         else:
@@ -61,6 +63,7 @@ class HypervisorList(object):
     An object containing Hypervisor objects which are fetched using the
     OpenStack CLI client.
     """
+
     def __init__(self, state=None, config={}):
         if state:
             self._hypervisors = self._parse_state(state)
@@ -84,7 +87,7 @@ class HypervisorList(object):
         try:
             hypervisors_data = execute_openstack_command('hypervisor list')
             return [Hypervisor(x['Hypervisor Hostname'], config)
-                        for x in hypervisors_data]
+                    for x in hypervisors_data]
         except Exception as e:
             logging.error('Could not fetch hypervisor list: %s', e)
             exit(1)
@@ -113,6 +116,7 @@ class Hypervisor(object):
     A Hypervisor object contains information about its available resources and
     the VMs it hosts.
     """
+
     def __init__(self, hostname, state=None, config={}):
         if state:
             self.hostname = state['hostname']
@@ -186,6 +190,7 @@ class VM(object):
 
     A VM object contains information about its flavor.
     """
+
     def __init__(self, id, state=None):
         if state:
             self.id = state['id']
@@ -230,7 +235,7 @@ class VM(object):
 
         Returns the VM data as a dictionary.
         """
-        return { 'id': self.id, 'vcpus': self.vcpus, 'ram': self.ram }
+        return {'id': self.id, 'vcpus': self.vcpus, 'ram': self.ram}
 
 
 @class_cache
@@ -239,6 +244,7 @@ class Flavor(object):
 
     A Flavor object contains information about the RAM and VCPUs it represents.
     """
+
     def __init__(self, name):
         self.name = name
         self.vcpus, self.ram = self._fetch_resources()
@@ -308,11 +314,11 @@ hypervisor resources.
 """, formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('-s', '--statefile', action='store',
-            help='Statefile containing Hypervisor-VM inventory.')
+                        help='Statefile containing Hypervisor-VM inventory.')
     parser.add_argument('-c', '--configfile', action='store',
-            help='Configuration file.')
+                        help='Configuration file.')
     parser.add_argument('-d', '--debug',
-            help='Enable debug', action='store_true')
+                        help='Enable debug', action='store_true')
 
     return parser.parse_args()
 
