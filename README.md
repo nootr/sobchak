@@ -89,8 +89,8 @@ $ pip install -r requirements.txt
 
 # Usage
 
-Make sure you've sourced your OpenStack openrc file, the rest is as easy as it
-gets:
+Make sure you've sourced your OpenStack openrc file, adjust the values set in
+`config.yaml` and the rest is as easy as it gets:
 
 ```bash
 $ ./sobchak
