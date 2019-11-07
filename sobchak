@@ -91,7 +91,8 @@ class Inventory(object):
         hypervisors.
         """
         if not self._hypervisors:
-            self._hypervisors = [ CustomHypervisor(h, self._config)
+            self._hypervisors = [
+                    CustomHypervisor(h, self.common_ratio, self._config)
                     for h in self._client.hypervisors.list() ]
 
             for vm in self.vms:
@@ -154,10 +155,14 @@ class CustomHypervisor(Hypervisor):
     and the VMs it hosts.
     """
 
-    def __init__(self, hypervisor, config={}):
+    def __init__(self, hypervisor, common_ratio, config={}):
         # TODO implement overhead and overcommit factors
         Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
         self._servers = []
+        self._common_ratio = common_ratio
+        self._ram_overcommit = config.get('ram_overcommit', 1)
+        self._cpu_overcommit = config.get('cpu_overcommit', 4)
+        self._memory_overhead = config.get('hypervisor_memory_overhead', 32)
         logging.debug('Initialized hypervisor: %s', self.id)
 
     def to_dict(self):
@@ -168,6 +173,7 @@ class CustomHypervisor(Hypervisor):
         dictionary = {
             'id': self.id,
             'name': self.name,
+            'score': self.score(self._common_ratio),
             'enabled': self.enabled,
             'vcpus': self.vcpus,
             'vcpus_used': self.vcpus_used,
@@ -192,6 +198,67 @@ class CustomHypervisor(Hypervisor):
         Returns True if the hypervisor is enabled.
         """
         return self.status == 'enabled'
+
+    @property
+    def available_ram(self):
+        """available_ram
+
+        Returns the amount of available RAM in MB's, taking memory overhead and
+        the overcommit ratio into account.
+        """
+        available_ram = self.memory_mb * self._ram_overcommit \
+            - self.memory_mb_used - self._memory_overhead
+
+        if available_ram < 0:
+            logging.warning('Used memory above overcommit treshold on %s',
+                    self.name)
+            return 0
+
+        return self.memory_mb * self._ram_overcommit - self.memory_mb_used
+
+    @property
+    def available_vcpus(self):
+        """available_vcpus
+
+        Returns the number of available VCPU's.
+        """
+        available_vcpus = self.vcpus * self._cpu_overcommit - self.vcpus_used
+
+        if available_vcpus < 0:
+            logging.warning('Used vCPUS above overcommit treshold on %s',
+                    self.name)
+            return 0
+
+        return self.vcpus * self._cpu_overcommit - self.vcpus_used
+
+    @property
+    def ratio(self):
+        """ratio
+
+        Returns the ratio between the available RAM (in MB's) and the available
+        number of vCPU's.
+        """
+        if not self.available_vcpus:
+            return self.available_ram
+        return int(self.available_ram / self.available_vcpus)
+
+    def score(self, common_ratio):
+        """score
+
+        Returns a score based on the difference between the most common RAM/vCPU
+        ratio amongst VMs and the RAM/vCPU ratio of available resources of this
+        hypervisor. The closer to zero, the better the score.
+        """
+        def _sigmoid(x):
+            """_sigmoid
+
+            A sigmoid-like function.
+            """
+            return x / (1 + abs(x))
+
+        weight_ram = _sigmoid( self.available_ram / self.memory_mb )
+        weight_vcpus = _sigmoid( self.available_vcpus / self.vcpus )
+        return (common_ratio - self.ratio) * (weight_ram + weight_vcpus)
 
     def add_server(self, server):
         """add_server
