@@ -59,7 +59,7 @@ fully distributed.
 Now that we know which hypervisors should re-distribute their resources, we can
 construct a list of migrations to patch things up.
 
-- Load Hypervisor-VM inventory from JSON-file or using OpenStack CLI calls.
+- Load Hypervisor-VM inventory
 - Until no improvement has been made:
   - Sort hypervisors on absolute score.
   - Try for each hypervisor (from highest absolute score to lowest):

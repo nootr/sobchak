@@ -77,7 +77,10 @@ class Inventory(object):
 
         Returns the inventory as a dictionary.
         """
-        return [ h.to_dict() for h in self.hypervisors ]
+        return {
+                'common_ratio': self.common_ratio,
+                'inventory': [ h.to_dict() for h in self.hypervisors ]
+                }
 
     @property
     def hypervisors(self):
@@ -113,6 +116,15 @@ class Inventory(object):
                     if vm.status != 'SHELVED_OFFLOADED' ]
 
         return self._vms
+
+    @property
+    def common_ratio(self):
+        """common_ratio
+
+        Returns the most common ratio amongst all VMs.
+        """
+        ratios = [ vm.ratio for vm in self.vms ]
+        return max(ratios, key=ratios.count)
 
     @property
     def flavors(self):
@@ -161,7 +173,7 @@ class CustomHypervisor(Hypervisor):
             'vcpus_used': self.vcpus_used,
             'memory_mb': self.memory_mb,
             'memory_mb_used': self.memory_mb_used,
-            'vms': [ s.to_dict() for s in self._servers ]
+            'vms': [ s.to_dict() for s in self._servers ],
         }
         return dictionary
 
@@ -210,6 +222,7 @@ class CustomServer(Server):
             'id': self.id,
             'ram': self.ram,
             'vcpus': self.vcpus,
+            'ratio': self.ratio,
         }
         return dictionary
 
@@ -228,6 +241,15 @@ class CustomServer(Server):
         Returns the number of virtual CPU's which are assigned to this server.
         """
         return self._flavor.vcpus
+
+    @property
+    def ratio(self):
+        """ratio
+
+        Returns the RAM/vCPU ratio, rounded down to the nearest integer to allow
+        ratio comparison as it prevents floating point comparison issues.
+        """
+        return int(self.ram/self.vcpus)
 
     @property
     def hypervisor(self):
