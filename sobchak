@@ -6,6 +6,10 @@
 import logging
 import argparse
 import os
+import base64
+
+from matplotlib import pyplot
+from io import BytesIO
 
 from keystoneauth1.identity import v3
 from keystoneauth1 import session as keystone_session
@@ -81,6 +85,14 @@ class Inventory(object):
                 'common_ratio': self.common_ratio,
                 'inventory': [ h.to_dict() for h in self.hypervisors ]
                 }
+
+    def generate_report(self):
+        """generate_report
+
+        Generates a report in HTML-format.
+        """
+        wrapper = '<img src="data:image/png;base64,{}" />'
+        return ''.join([ wrapper.format(h.plot) for h in self.hypervisors ])
 
     @property
     def hypervisors(self):
@@ -182,6 +194,25 @@ class CustomHypervisor(Hypervisor):
             'vms': [ s.to_dict() for s in self._servers ],
         }
         return dictionary
+
+    @property
+    def plot(self):
+        """plot
+
+        Generates a plot of the hypervisor and its resources and returns it as a
+        Base64 decoded string.
+        """
+        # Generate a plot
+        x = [ i for i in range(100) ]
+        y = [ i**2 for i in x ]
+        pyplot.plot(x, y)
+
+        # Create PNG file in memory
+        png_file = BytesIO()
+        pyplot.savefig(png_file, format='png')
+
+        # Return the PNG file as a Base64 string
+        return base64.encodestring(png_file.getvalue()).decode('utf-8')
 
     @property
     def name(self):
@@ -366,11 +397,13 @@ hypervisor resources.
                         help='Configuration file.')
     parser.add_argument('-d', '--debug',
                         help='Enable debug', action='store_true')
+    parser.add_argument('-R', '--generate-report',
+                        help='Generate a report', action='store_true')
 
     return parser.parse_args()
 
 
-def run(configfile, debug):
+def run(configfile, debug, generate_report):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
@@ -397,9 +430,11 @@ def run(configfile, debug):
     # Create inventory
     inventory = Inventory(nova, config)
 
-    # Print migration list
-    from pprint import pprint
-    pprint(inventory.to_dict())
+    # Generate report (if needed)
+    if generate_report:
+        with open('report.html', 'w+') as report:
+            report.write(inventory.generate_report())
+            print('Report available: {}'.format(os.path.abspath('report.html')))
 
 if __name__ == "__main__":
     args = parse_args()

@@ -8,6 +8,7 @@ chardet==3.0.4
 cliff==2.16.0
 cmd2==0.8.9
 cryptography==2.7
+cycler==0.10.0
 debtcollector==1.22.0
 decorator==4.4.0
 dogpile.cache==0.8.0
@@ -18,10 +19,13 @@ jsonpatch==1.24
 jsonpointer==2.0
 jsonschema==3.0.2
 keystoneauth1==3.17.1
+kiwisolver==1.1.0
+matplotlib==3.1.1
 msgpack==0.6.2
 munch==2.3.2
 netaddr==0.7.19
 netifaces==0.10.9
+numpy==1.17.3
 openstacksdk==0.36.0
 os-service-types==1.7.0
 osc-lib==1.14.1
@@ -37,6 +41,7 @@ pyparsing==2.4.2
 pyperclip==1.7.0
 pyrsistent==0.15.4
 python-cinderclient==5.0.0
+python-dateutil==2.8.1
 python-glanceclient==2.17.0
 python-keystoneclient==3.21.0
 python-novaclient==15.1.0
