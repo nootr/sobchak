@@ -88,15 +88,14 @@ class Inventory(object):
         hypervisors.
         """
         if not self._hypervisors:
-            self._hypervisors = [ CustomHypervisor(h, self._config) \
+            self._hypervisors = [ CustomHypervisor(h, self._config)
                     for h in self._client.hypervisors.list() ]
 
             for vm in self.vms:
-                hypervisor = get_object_by_id(self._hypervisors,
-                    vm.hypervisor)
+                hypervisor = get_object_by_id(self._hypervisors, vm.hypervisor)
                 if not hypervisor:
-                    raise ValueError('Unknown hypervisor for %s (state: %s)',
-                            vm.name, vm.state)
+                    raise ValueError('Unknown hypervisor for %s (status: %s)',
+                            vm.name, vm.status)
                 hypervisor.add_server(vm)
 
         return self._hypervisors
@@ -157,6 +156,7 @@ class CustomHypervisor(Hypervisor):
         dictionary = {
             'id': self.id,
             'name': self.name,
+            'enabled': self.enabled,
             'vcpus': self.vcpus,
             'vcpus_used': self.vcpus_used,
             'memory_mb': self.memory_mb,
@@ -172,6 +172,14 @@ class CustomHypervisor(Hypervisor):
         Returns the hypervisor domain name.
         """
         return self.hypervisor_hostname
+
+    @property
+    def enabled(self):
+        """enabled
+
+        Returns True if the hypervisor is enabled.
+        """
+        return self.status == 'enabled'
 
     def add_server(self, server):
         """add_server
