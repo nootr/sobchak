@@ -8,5 +8,5 @@
 ram_overcommit: 1.0
 cpu_overcommit: 4.0
 
-# Hypervisor memory overhead (in GBs)
-hypervisor_memory_overhead: 32
+# Hypervisor memory overhead (in MBs)
+hypervisor_memory_overhead: 32768

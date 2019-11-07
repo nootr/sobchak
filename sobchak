@@ -193,7 +193,7 @@ class CustomHypervisor(Hypervisor):
         self._common_ratio = common_ratio
         self._ram_overcommit = config.get('ram_overcommit', 1)
         self._cpu_overcommit = config.get('cpu_overcommit', 4)
-        self._memory_overhead = config.get('hypervisor_memory_overhead', 32)
+        self._memory_overhead = config.get('hypervisor_memory_overhead', 32768)
         logging.debug('Initialized hypervisor: %s', self.id)
 
     def to_dict(self):
@@ -221,7 +221,7 @@ class CustomHypervisor(Hypervisor):
         Base64 decoded string.
         """
         # Generate a plot
-        width = self.memory_mb * self._ram_overcommit
+        width = self.memory_mb * self._ram_overcommit - self._memory_overhead
         height = self.vcpus * self._cpu_overcommit
 
         pyplot.xlim(1.1 * width)
@@ -230,14 +230,14 @@ class CustomHypervisor(Hypervisor):
         pyplot.gca().invert_yaxis()
 
         # Draw graphs representing VMs
-        x = [ i for i in range(self.memory_mb) ]
+        x = [ i for i in range(width) ]
         y = [ 0 ]
         for vm in self._servers:
             dy_dx = vm.vcpus / vm.ram
             for _ in range(vm.ram):
                 y.append(y[-1] + dy_dx)
 
-        pyplot.plot(x[:len(y)], y)
+        pyplot.plot(x[:len(y)], y[:len(x)])
 
         # Draw box representing hypervisor resources
         rect = patches.Rectangle(
@@ -250,7 +250,7 @@ class CustomHypervisor(Hypervisor):
         pyplot.gca().add_patch(rect)
 
         # Draw graphs representing common ratio
-        dy = 1.0 / float(self._common_ratio)
+        dx = self._common_ratio
         x = []
         y = []
         next_x = width
@@ -258,8 +258,8 @@ class CustomHypervisor(Hypervisor):
         while next_x >= 0 and next_y >= 0:
             x.append(next_x)
             y.append(next_y)
-            next_x -= 1
-            next_y -= dy
+            next_x -= dx
+            next_y -= 1
 
         x.reverse()
         y.reverse()
@@ -307,7 +307,7 @@ class CustomHypervisor(Hypervisor):
                     self.name)
             return 0
 
-        return self.memory_mb * self._ram_overcommit - self.memory_mb_used
+        return available_ram
 
     @property
     def available_vcpus(self):
@@ -322,7 +322,7 @@ class CustomHypervisor(Hypervisor):
                     self.name)
             return 0
 
-        return self.vcpus * self._cpu_overcommit - self.vcpus_used
+        return available_vcpus
 
     @property
     def ratio(self):
@@ -351,7 +351,8 @@ class CustomHypervisor(Hypervisor):
 
         weight_ram = _sigmoid( self.available_ram / self.memory_mb )
         weight_vcpus = _sigmoid( self.available_vcpus / self.vcpus )
-        return int((common_ratio - self.ratio) * (weight_ram + weight_vcpus))
+        #return int((common_ratio - self.ratio) * (weight_ram + weight_vcpus))
+        return int(common_ratio - self.ratio)
 
     def add_server(self, server):
         """add_server
