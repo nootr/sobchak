@@ -8,7 +8,7 @@ import argparse
 import os
 import base64
 
-from matplotlib import pyplot
+from matplotlib import pyplot, patches
 from io import BytesIO
 
 from keystoneauth1.identity import v3
@@ -91,8 +91,28 @@ class Inventory(object):
 
         Generates a report in HTML-format.
         """
-        wrapper = '<img src="data:image/png;base64,{}" />'
-        return ''.join([ wrapper.format(h.plot) for h in self.hypervisors ])
+        head = '<style>th,td{border-bottom:1px solid #ddd;}' + \
+               'tr:hover{background-color:#f5f5f5;}.column{' + \
+               'float:left;width:50%;padding:10px;height:100%;}' + \
+               '*{box-sizing:border-box;}</style>'
+        body = '<h1>Migration report</h>'
+        for h in self.hypervisors:
+            plot = '<img src="data:image/png;base64,' + h.plot + '"/>'
+            table = '<table>'
+            for key, value in h.to_dict().items():
+                if isinstance(value, list):
+                    _value = '<br />'.join(value)
+                else:
+                    _value = str(value)
+                table += '<tr><th scope="row" valign="top" align="right">' + \
+                        key + '</th><td>' + _value + '</td>'
+            table += '</table>'
+            hypervisor_report = '<div class="row"><div class="column">' + \
+                table + '</div><div class="column">' + plot + '</div></div>'
+            body += hypervisor_report
+        page = '<html><head>' + head + '</head>' + \
+                '<body>' + body + '</body></html>'
+        return page
 
     @property
     def hypervisors(self):
@@ -168,7 +188,6 @@ class CustomHypervisor(Hypervisor):
     """
 
     def __init__(self, hypervisor, common_ratio, config={}):
-        # TODO implement overhead and overcommit factors
         Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
         self._servers = []
         self._common_ratio = common_ratio
@@ -183,15 +202,14 @@ class CustomHypervisor(Hypervisor):
         Returns the hypervisor as a dict.
         """
         dictionary = {
-            'id': self.id,
             'name': self.name,
             'score': self.score(self._common_ratio),
             'enabled': self.enabled,
-            'vcpus': self.vcpus,
+            'vcpus': self.vcpus * self._cpu_overcommit,
             'vcpus_used': self.vcpus_used,
-            'memory_mb': self.memory_mb,
+            'memory_mb': self.memory_mb * self._ram_overcommit,
             'memory_mb_used': self.memory_mb_used,
-            'vms': [ s.to_dict() for s in self._servers ],
+            'vms': [ s.name for s in self._servers ],
         }
         return dictionary
 
@@ -203,13 +221,57 @@ class CustomHypervisor(Hypervisor):
         Base64 decoded string.
         """
         # Generate a plot
-        x = [ i for i in range(100) ]
-        y = [ i**2 for i in x ]
+        width = self.memory_mb * self._ram_overcommit
+        height = self.vcpus * self._cpu_overcommit
+
+        pyplot.xlim(1.1 * width)
+        pyplot.ylim(1.1 * height)
+        pyplot.gca().invert_xaxis()
+        pyplot.gca().invert_yaxis()
+
+        # Draw graphs representing VMs
+        x = [ i for i in range(self.memory_mb) ]
+        y = [ 0 ]
+        for vm in self._servers:
+            dy_dx = vm.vcpus / vm.ram
+            for _ in range(vm.ram):
+                y.append(y[-1] + dy_dx)
+
+        pyplot.plot(x[:len(y)], y)
+
+        # Draw box representing hypervisor resources
+        rect = patches.Rectangle(
+            (0, 0),
+            width,
+            height,
+            linewidth=1,
+            edgecolor='b',
+            facecolor='none')
+        pyplot.gca().add_patch(rect)
+
+        # Draw graphs representing common ratio
+        dy = 1.0 / float(self._common_ratio)
+        x = []
+        y = []
+        next_x = width
+        next_y = height
+        while next_x >= 0 and next_y >= 0:
+            x.append(next_x)
+            y.append(next_y)
+            next_x -= 1
+            next_y -= dy
+
+        x.reverse()
+        y.reverse()
+
         pyplot.plot(x, y)
 
-        # Create PNG file in memory
+        # Create PNG
         png_file = BytesIO()
         pyplot.savefig(png_file, format='png')
+
+        # Clear plot
+        pyplot.clf()
 
         # Return the PNG file as a Base64 string
         return base64.encodestring(png_file.getvalue()).decode('utf-8')
@@ -289,7 +351,7 @@ class CustomHypervisor(Hypervisor):
 
         weight_ram = _sigmoid( self.available_ram / self.memory_mb )
         weight_vcpus = _sigmoid( self.available_vcpus / self.vcpus )
-        return (common_ratio - self.ratio) * (weight_ram + weight_vcpus)
+        return int((common_ratio - self.ratio) * (weight_ram + weight_vcpus))
 
     def add_server(self, server):
         """add_server
@@ -310,19 +372,6 @@ class CustomServer(Server):
         Server.__init__(self, server.manager, server._info)
         self._flavor = get_object_by_id(flavors, self.flavor['id'])
         logging.debug('Initialized server: %s', self.id)
-
-    def to_dict(self):
-        """to_dict
-
-        Returns information about this server as a dictionary.
-        """
-        dictionary = {
-            'id': self.id,
-            'ram': self.ram,
-            'vcpus': self.vcpus,
-            'ratio': self.ratio,
-        }
-        return dictionary
 
     @property
     def ram(self):
