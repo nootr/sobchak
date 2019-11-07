@@ -3,102 +3,128 @@
 # Sobchak
 # An OpenStack instance scheduling optimizer.
 
-# TODO: Implement Nova API
-# https://docs.openstack.org/python-novaclient/latest/user/python-api.html
-
 import logging
 import argparse
 import os
-import json
-import yaml
+
+from keystoneauth1.identity import v3
+from keystoneauth1 import session as keystone_session
+from keystoneclient.v3 import client as keystone_client
+from novaclient import client as nova_client
+
+from novaclient.v2.servers import Server
+from novaclient.v2.hypervisors import Hypervisor
 
 from time import sleep
-from json import JSONDecodeError
-from subprocess import CalledProcessError, check_output, STDOUT
+
+# Load openrc values
+try:
+    PROJECT_ID = os.environ['OS_PROJECT_ID']
+    AUTH_URL = os.environ['OS_AUTH_URL']
+    USERNAME = os.environ['OS_USERNAME']
+    PASSWORD = os.environ['OS_PASSWORD']
+except KeyError:
+    logging.error('Please source your OpenStack openrc file.')
+    raise
 
 
-def class_cache(obj):
-    """class_cache
+def get_object_by_id(objects, identifier):
+    """get_object_by_id
 
-    A Class decorator used to cache objects which are initialized using only
-    an identifier (e.g. name or UUID).
+    Returns the object which belongs to the given ID. Returns None if it wasn't
+    found.
     """
-    cache = {}
-
-    def _wrapper(identifier):
-        if identifier not in cache:
-            cache[identifier] = obj(identifier)
-        return cache[identifier]
-
-    return _wrapper
+    logging.debug('Searching for %s inside %s', identifier, objects)
+    for obj in objects:
+        if obj.id == identifier or obj.name == identifier:
+            return obj
+    logging.info('Could not find %s inside %s', identifier, objects)
+    return None
 
 
-def execute_openstack_command(command, timeout=5):
-    """execute_openstack_command
+class Session(keystone_session.Session):
+    """Session
 
-    Simply executes an OpenStack command and returns the output which is
-    converted from a JSON string to an object.
-    Raises an exception if the output wasn't in JSON format or if the openstack
-    command returns a non-zero return code after multiple tries.
-    """
-    try:
-        full_command = 'openstack {} -f json'.format(command)
-        logging.info('Executing command: "%s"', full_command)
-        command_split = [x for x in full_command.split(' ') if x]
-        output = check_output(command_split, encoding='utf-8', stderr=STDOUT)
-        return json.loads(output)
-    except (JSONDecodeError, CalledProcessError):
-        if timeout < 60:
-            logging.debug('Command failed, trying again after %d seconds.',
-                          timeout)
-            sleep(timeout)
-            execute_openstack_command(command, timeout * 2)
-        else:
-            raise
-
-
-class HypervisorList(object):
-    """HypervisorList
-
-    An object containing Hypervisor objects which are fetched using the
-    OpenStack CLI client.
+    Maintains an OpenStack session which can be used by the clients.
     """
 
-    def __init__(self, state=None, config={}):
-        if state:
-            self._hypervisors = self._parse_state(state)
-        else:
-            self._hypervisors = self._fetch_hypervisors(config)
+    def __init__(self):
+        auth = v3.Password(
+            auth_url=AUTH_URL,
+            username=USERNAME,
+            password=PASSWORD,
+            project_id=PROJECT_ID,
+            user_domain_name='Default')
+        keystone_session.Session.__init__(self, auth=auth)
 
-    def _parse_state(self, state):
-        """_parse_state
 
-        Converts a list from a given dictionary containing all data necessary to
-        a list of Hypervisor objects.
+class Inventory(object):
+    """Inventory
+
+    An object containing Hypervisor and VM objects which are fetched using the
+    OpenStack API.
+    """
+
+    def __init__(self, novaclient, config={}):
+        self._client = novaclient
+        self._config = config
+        self._hypervisors = []
+        self._vms = []
+        self._flavors = []
+
+    def to_dict(self):
+        """to_dict
+
+        Returns the inventory as a dictionary.
         """
-        return [Hypervisor(None, state=s) for s in state]
-
-    def _fetch_hypervisors(self, config):
-        """_fetch_hypervisors
-
-        Fetches a Hypervisor-VM inventory using the OpenStack CLI client and
-        returns it as a list.
-        """
-        try:
-            hypervisors_data = execute_openstack_command('hypervisor list')
-            return [Hypervisor(x['Hypervisor Hostname'], config)
-                    for x in hypervisors_data]
-        except Exception as e:
-            logging.error('Could not fetch hypervisor list: %s', e)
-            exit(1)
+        return [ h.to_dict() for h in self.hypervisors ]
 
     @property
-    def state(self):
-        """state
+    def hypervisors(self):
+        """hypervisors
 
-        Returns the Hypervisor-VM inventory as a dictionary.
+        Returns a list of hypervisors as CustomHypervisor objects. If it's the
+        first time the list is being called, the VM's are attached to their
+        hypervisors.
         """
-        return [hypervisor.dump for hypervisor in self._hypervisors]
+        if not self._hypervisors:
+            self._hypervisors = [ CustomHypervisor(h, self._config) \
+                    for h in self._client.hypervisors.list() ]
+
+            for vm in self.vms:
+                hypervisor = get_object_by_id(self._hypervisors,
+                    vm.hypervisor)
+                if not hypervisor:
+                    #raise ValueError('Could not find hypervisor %s', hypervisor)
+                    logging.error('Could not find hypervisor %s', hypervisor)
+                    continue
+                hypervisor.add_server(vm)
+
+        return self._hypervisors
+
+    @property
+    def vms(self):
+        """vms
+
+        Returns a list of VM's as CustomServer objects.
+        """
+        if not self._vms:
+            opts = { 'all_tenants': True }
+            self._vms = [ CustomServer(vm, self.flavors) \
+                    for vm in self._client.servers.list(search_opts=opts) ]
+
+        return self._vms
+
+    @property
+    def flavors(self):
+        """flavors
+
+        Returns a list of Flavors.
+        """
+        if not self._flavors:
+            self._flavors = self._client.flavors.list(is_public=None)
+
+        return self._flavors
 
     def optimize(self):
         """optimize
@@ -110,159 +136,98 @@ class HypervisorList(object):
         return []
 
 
-class Hypervisor(object):
-    """Hypervisor
+class CustomHypervisor(Hypervisor):
+    """CustomHypervisor
 
-    A Hypervisor object contains information about its available resources and
-    the VMs it hosts.
+    A CustomHypervisor object contains information about its available resources
+    and the VMs it hosts.
     """
 
-    def __init__(self, hostname, state=None, config={}):
-        if state:
-            self.hostname = state['hostname']
-            self.vcpus = state['vcpus']
-            self.ram = state['ram']
-            self.vms = self._parse_state(state['vms'])
-        else:
-            self.hostname = hostname
-            self.vms = self._fetch_vms()
-            self.vcpus, self.ram = self._fetch_resources(config)
+    def __init__(self, hypervisor, config={}):
+        # TODO implement overhead and overcommit factors
+        Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
+        self._servers = []
+        logging.debug('Initialized hypervisor: %s', self.id)
 
-    def _parse_state(self, state):
-        """_parse_state
+    def to_dict(self):
+        """to_dict
 
-        Converts a list from a given dictionary containing all data necessary to
-        a list of VM objects.
+        Returns the hypervisor as a dict.
         """
-        return [VM(None, state=s) for s in state]
-
-    def _fetch_vms(self):
-        """_fetch_vms
-
-        Fetches a list of VMs using the OpenStack CLI client and converts its
-        output into a list of VM objects.
-        """
-        try:
-            command = 'server list --all --host {}'.format(self.hostname)
-            vps_data = execute_openstack_command(command)
-            return [VM(vps['ID']) for vps in vps_data]
-        except Exception as e:
-            logging.error('Could not determine VM list of hypervisor: %s', e)
-            exit(1)
-
-    def _fetch_resources(self, config):
-        """_fetch_resources
-
-        Fetches the Hypervisor resources using the OpenStack CLI client and
-        returns the total number of available VCPUs and RAM (GBs).
-        """
-        try:
-            cpu_overcommit = config.get('cpu_overcommit', 1)
-            ram_overcommit = config.get('ram_overcommit', 1)
-            memory_overhead = config.get('hypervisor_memory_overhead', 32)
-
-            command = 'hypervisor show {}'.format(self.hostname)
-            data = execute_openstack_command(command)
-            vcpus = data['vcpus'] * cpu_overcommit
-            ram = data['memory_mb'] * ram_overcommit/1024 - memory_overhead
-            return vcpus, ram
-        except Exception as e:
-            logging.error('Could not determine Hypervisor resources: %s', e)
-            exit(1)
-
-    @property
-    def dump(self):
-        """dump
-
-        Returns the Hypervisor data as a dictionary.
-        """
-        data = {
-            'hostname': self.hostname,
+        dictionary = {
+            'id': self.id,
+            'name': self.name,
             'vcpus': self.vcpus,
-            'ram': self.ram,
-            'vms': [vm.dump for vm in self.vms]
+            'vcpus_used': self.vcpus_used,
+            'memory_mb': self.memory_mb,
+            'memory_mb_used': self.memory_mb_used,
+            'vms': [ s.to_dict() for s in self._servers ]
         }
-        return data
-
-
-class VM(object):
-    """VM
-
-    A VM object contains information about its flavor.
-    """
-
-    def __init__(self, id, state=None):
-        if state:
-            self.id = state['id']
-            self._vcpus = state['vcpus']
-            self._ram = state['ram']
-            self._flavor = None
-        else:
-            self.id = id
-            self._flavor = self._fetch_flavor()
-
-    def _fetch_flavor(self):
-        """_fetch_flavor
-
-        Fetches the flavor data of this VM using the OpenStack CLI client and
-        returns it as a Flavor object.
-        """
-        try:
-            command = 'server show {}'.format(self.id)
-            vm_data = execute_openstack_command(command)
-            return Flavor(vm_data['flavor'].split()[0])
-        except Exception as e:
-            logging.error('Could not determine flavor of VM: %s', e)
-            exit(1)
+        return dictionary
 
     @property
-    def vcpus(self):
-        if self._flavor:
-            return self._flavor.vcpus
-        else:
-            return self._vcpus
+    def name(self):
+        """name
+
+        Returns the hypervisor domain name.
+        """
+        return self.hypervisor_hostname
+
+    def add_server(self, server):
+        """add_server
+
+        Adds an OpenStack instance to the Hypervisor.
+        """
+        self._servers.append(server)
+
+
+class CustomServer(Server):
+    """CustomServer
+
+    A CustomServer object contains information about an OpenStack instance and
+    the resources it needs.
+    """
+
+    def __init__(self, server, flavors):
+        Server.__init__(self, server.manager, server._info)
+        self._flavor = get_object_by_id(flavors, self.flavor['id'])
+        logging.debug('Initialized server: %s', self.id)
+
+    def to_dict(self):
+        """to_dict
+
+        Returns information about this server as a dictionary.
+        """
+        dictionary = {
+            'id': self.id,
+            'ram': self.ram,
+            'vcpus': self.vcpus,
+        }
+        return dictionary
 
     @property
     def ram(self):
-        if self._flavor:
-            return self._flavor.ram
-        else:
-            return self._ram
+        """ram
+
+        Returns the memory which is assigned to this server in MB's.
+        """
+        return self._flavor.ram / 1024
 
     @property
-    def dump(self):
-        """dump
+    def vcpus(self):
+        """vcpus
 
-        Returns the VM data as a dictionary.
+        Returns the number of virtual CPU's which are assigned to this server.
         """
-        return {'id': self.id, 'vcpus': self.vcpus, 'ram': self.ram}
+        return self._flavor.vcpus
 
+    @property
+    def hypervisor(self):
+        """hypervisor
 
-@class_cache
-class Flavor(object):
-    """Flavor
-
-    A Flavor object contains information about the RAM and VCPUs it represents.
-    """
-
-    def __init__(self, name):
-        self.name = name
-        self.vcpus, self.ram = self._fetch_resources()
-
-    def _fetch_resources(self):
-        """_fetch_resources
-
-        Fetches information about the flavor using the OpenStack CLI client and
-        returns the VCPUs and RAM in GBs. Returns (0, 0) and gives a warning
-        when the Flavor could not be determined.
+        Returns the hypervisor hostname.
         """
-        try:
-            command = 'flavor show {}'.format(self.name)
-            data = execute_openstack_command(command)
-            return data['vcpus'], data['ram']/1024
-        except Exception as e:
-            logging.warning('Could not determine resources of flavor: %s', e)
-            return 0, 0
+        return self.__getattr__('OS-EXT-SRV-ATTR:hypervisor_hostname')
 
 
 def parse_config(filename):
@@ -276,19 +241,6 @@ def parse_config(filename):
     except Exception as e:
         logging.error('Could not load %s: %s', filename, e)
         exit(1)
-
-
-def verify_environment():
-    """verify_environment
-
-    Check if the user has sourced an OpenStack openrc file, if so, return True.
-    """
-    needed_variables = ['OS_PROJECT_ID', 'OS_PROJECT_NAME']
-    for variable in needed_variables:
-        if variable not in os.environ:
-            logging.debug('Variable not set: %s', variable)
-            return False
-    return True
 
 
 def parse_args():
@@ -313,8 +265,6 @@ which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 """, formatter_class=argparse.RawTextHelpFormatter)
 
-    parser.add_argument('-s', '--statefile', action='store',
-                        help='Statefile containing Hypervisor-VM inventory.')
     parser.add_argument('-c', '--configfile', action='store',
                         help='Configuration file.')
     parser.add_argument('-d', '--debug',
@@ -323,7 +273,7 @@ hypervisor resources.
     return parser.parse_args()
 
 
-def run(statefile, configfile, debug):
+def run(configfile, debug):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
@@ -336,36 +286,23 @@ def run(statefile, configfile, debug):
             format='%(asctime)s %(levelname)-8s %(message)s'
         )
 
+    # Parse configfile (if given)
     config = {}
     if configfile:
         config = parse_config(configfile)
         logging.debug('Loaded config: %s', config)
 
-    hypervisors = None
+    # Create OpenStack Nova client
+    sess = Session()
+    keystone = keystone_client.Client(session=sess)
+    nova = nova_client.Client('2', session=sess)
 
-    if statefile:
-        try:
-            with open(statefile, 'r') as state:
-                hypervisors = HypervisorList(state=json.load(state))
-        except Exception as e:
-            logging.info('Unable to read statefile, using as output: %s', e)
+    # Create inventory
+    inventory = Inventory(nova, config)
 
-    if not hypervisors and not verify_environment():
-        logging.error('Please source your OpenStack openrc file!')
-        exit(1)
-
-    if not hypervisors:
-        hypervisors = HypervisorList(config)
-        if statefile:
-            try:
-                with open(statefile, 'w+') as state:
-                    json.dump(hypervisors.state, state)
-            except Exception as e:
-                logging.error('Could not write to statefile: %s', e)
-                exit(1)
-
-    print(hypervisors.optimize())
-
+    # Print migration list
+    from pprint import pprint
+    pprint(inventory.to_dict())
 
 if __name__ == "__main__":
     args = parse_args()
