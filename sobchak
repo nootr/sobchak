@@ -95,9 +95,8 @@ class Inventory(object):
                 hypervisor = get_object_by_id(self._hypervisors,
                     vm.hypervisor)
                 if not hypervisor:
-                    #raise ValueError('Could not find hypervisor %s', hypervisor)
-                    logging.error('Could not find hypervisor %s', hypervisor)
-                    continue
+                    raise ValueError('Unknown hypervisor for %s (state: %s)',
+                            vm.name, vm.state)
                 hypervisor.add_server(vm)
 
         return self._hypervisors
@@ -111,7 +110,8 @@ class Inventory(object):
         if not self._vms:
             opts = { 'all_tenants': True }
             self._vms = [ CustomServer(vm, self.flavors) \
-                    for vm in self._client.servers.list(search_opts=opts) ]
+                    for vm in self._client.servers.list(search_opts=opts)
+                    if vm.status != 'SHELVED_OFFLOADED' ]
 
         return self._vms
 
@@ -211,7 +211,7 @@ class CustomServer(Server):
 
         Returns the memory which is assigned to this server in MB's.
         """
-        return self._flavor.ram / 1024
+        return self._flavor.ram
 
     @property
     def vcpus(self):
