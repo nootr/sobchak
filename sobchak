@@ -297,15 +297,15 @@ class CustomHypervisor(Hypervisor):
         """available_ram
 
         Returns the amount of available RAM in MB's, taking memory overhead and
-        the overcommit ratio into account.
+        the overcommit ratio into account. Note that memory overhead is already
+        calculated into `self.memory_mb_used`.
         """
         available_ram = self.memory_mb * self._ram_overcommit \
-            - self.memory_mb_used - self._memory_overhead
+            - self.memory_mb_used
 
         if available_ram < 0:
             logging.warning('Used memory above overcommit treshold on %s',
                     self.name)
-            return 0
 
         return available_ram
 
@@ -320,7 +320,6 @@ class CustomHypervisor(Hypervisor):
         if available_vcpus < 0:
             logging.warning('Used vCPUS above overcommit treshold on %s',
                     self.name)
-            return 0
 
         return available_vcpus
 
