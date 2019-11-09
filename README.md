@@ -102,22 +102,22 @@ has the ability to improve another hypervisor's score by exchanging VMs.
 
 Let's set some definitions: a VM resource ratio which steers left or right
 compared to the most common ratio gives its hypervisor
-**left-/right-divergent control**.
+**left-/right-handed divergence**.
 
-![Left-/right-divergent control](img/README-4.png)
+![Left-/right-handed divergence](img/README-4.png)
 
-*Fig. 4: The blue dashed line represents right-divergent control, the green
-dashed line represents left-divergent control.*
+*Fig. 4: The blue dashed line represents right-handed divergence, the green
+dashed line represents left-handed divergence.*
 
 ### Mixing and matching hypervisors
 
 In order to improve the overall resource distribution, we need to mix two or
 more hypervisors which contain:
 
-* a hypervisor with a high absolute **score** and some amount of **control** in
-  a certain direction.
-* a hypervisor with an opposing **score** and some amount of **control** in the
-  other direction.
+* a hypervisor with a high absolute **score** and some amount of **divergence**
+  in a certain direction.
+* a hypervisor with an opposing **score** and some amount of **divergence** in
+  the other direction.
 * a hypervisor with enough unallocated resources to provide room to exchange
   VMs; it should be able to host a copy of the VM which is using the most
   resources amongst this group of hypervisors.

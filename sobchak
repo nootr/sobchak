@@ -10,7 +10,7 @@ import base64
 
 from matplotlib import pyplot, patches
 from io import BytesIO
-from math import atan
+from math import atan, sqrt, sin
 
 from keystoneauth1.identity import v3
 from keystoneauth1 import session as keystone_session
@@ -324,7 +324,8 @@ class CustomHypervisor(Hypervisor):
         """
         dictionary = {
             'name': self.name,
-            'score': self.score(self._common_ratio),
+            'score': self.score,
+            'divergence': self.divergence,
             'enabled': self.enabled,
             'vcpus': self.vcpus * self._cpu_overcommit,
             'vcpus_used': self.vcpus_used,
@@ -431,7 +432,24 @@ class CustomHypervisor(Hypervisor):
             return self.available_ram
         return int(self.available_ram / self.available_vcpus)
 
-    def score(self, common_ratio):
+    @property
+    def divergence(self):
+        """divergence
+
+        Returns a tuple containing the sum of left- and right-handed divergent
+        VMs.
+        """
+        left = right = 0
+        for vm in self._servers:
+            divergence = vm.calculate_divergence(self._common_ratio)
+            if divergence < 0:
+                left -= divergence
+            else:
+                right += divergence
+        return (left, right)
+
+    @property
+    def score(self):
         """score
 
         Returns a score based on the difference between the most common RAM/vCPU
@@ -448,7 +466,7 @@ class CustomHypervisor(Hypervisor):
         # TODO: Account for CPU/RAM cost
         weight_ram = _sigmoid( self.available_ram / self.memory_mb )
         weight_vcpus = _sigmoid( self.available_vcpus / self.vcpus )
-        angle = atan(common_ratio) - atan(self.ratio)
+        angle = atan(self._common_ratio) - atan(self.ratio)
         return angle * (weight_ram + weight_vcpus)
 
     def add_server(self, server):
@@ -503,6 +521,23 @@ class CustomServer(Server):
         Returns the hypervisor hostname.
         """
         return self.__getattr__('OS-EXT-SRV-ATTR:hypervisor_hostname')
+
+    @property
+    def length(self):
+        """length
+
+        Returns the length of this VM's resource vector.
+        """
+        return sqrt(self.ram * self.ram + self.vcpus * self.vcpus)
+
+    def calculate_divergence(self, reference):
+        """calculate_divergence
+
+        Returns the divergence from a reference slope. See README.md for more
+        information about what this actually means.
+        """
+        angle = atan(self.ratio) - atan(reference)
+        return self.length * sin(angle)
 
 
 def parse_config(filename):
