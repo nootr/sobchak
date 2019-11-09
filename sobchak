@@ -62,6 +62,70 @@ class Session(keystone_session.Session):
         keystone_session.Session.__init__(self, auth=auth)
 
 
+class Plot(object):
+    """Plot
+
+    Generates a graph and converts it to a base64-decoded PNG file.
+    """
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self._png_file = BytesIO()
+
+        pyplot.xlim(1.1 * width)
+        pyplot.ylim(1.1 * height)
+        pyplot.gca().invert_xaxis()
+        pyplot.gca().invert_yaxis()
+
+    def __del__(self):
+        """__del__
+
+        Make sure the plot is cleared when this object is destructed.
+        """
+        pyplot.clf()
+
+    def add_graph(self, x, y):
+        """add_graph
+
+        Turn two lists representing x and y values into a plot and add it to
+        the graph.
+        """
+        pyplot.plot(x[:len(y)], y[:len(x)])
+
+    def add_box(self, width, height, color='b'):
+        """add_box
+
+        Add a box with a given width and height of a given color (blue by
+        default) to the graph.
+        """
+        rect = patches.Rectangle(
+            (0, 0),
+            width,
+            height,
+            linewidth=1,
+            edgecolor=color,
+            facecolor='none')
+        pyplot.gca().add_patch(rect)
+
+    @property
+    def png(self):
+        """png
+
+        Saves the current plot to the in-memory PNG file and returns the file.
+        """
+        pyplot.savefig(self._png_file, format='png')
+        return self._png_file
+
+    @property
+    def base64(self):
+        """base64
+
+        Returns a base64-decoded string of the graph.
+        """
+        image = self.png.getvalue()
+        return base64.encodestring(image).decode('utf-8')
+
+
 class Inventory(object):
     """Inventory
 
@@ -223,11 +287,7 @@ class CustomHypervisor(Hypervisor):
         # Generate a plot
         width = self.memory_mb * self._ram_overcommit - self._memory_overhead
         height = self.vcpus * self._cpu_overcommit
-
-        pyplot.xlim(1.1 * width)
-        pyplot.ylim(1.1 * height)
-        pyplot.gca().invert_xaxis()
-        pyplot.gca().invert_yaxis()
+        plot = Plot(width, height)
 
         # Draw graphs representing VMs
         x = [ i for i in range(width) ]
@@ -236,18 +296,10 @@ class CustomHypervisor(Hypervisor):
             dy_dx = vm.vcpus / vm.ram
             for _ in range(vm.ram):
                 y.append(y[-1] + dy_dx)
-
-        pyplot.plot(x[:len(y)], y[:len(x)])
+        plot.add_graph(x, y)
 
         # Draw box representing hypervisor resources
-        rect = patches.Rectangle(
-            (0, 0),
-            width,
-            height,
-            linewidth=1,
-            edgecolor='b',
-            facecolor='none')
-        pyplot.gca().add_patch(rect)
+        plot.add_box(width, height)
 
         # Draw graphs representing common ratio
         dx = self._common_ratio
@@ -260,21 +312,9 @@ class CustomHypervisor(Hypervisor):
             y.append(next_y)
             next_x -= dx
             next_y -= 1
+        plot.add_graph(x, y)
 
-        x.reverse()
-        y.reverse()
-
-        pyplot.plot(x, y)
-
-        # Create PNG
-        png_file = BytesIO()
-        pyplot.savefig(png_file, format='png')
-
-        # Clear plot
-        pyplot.clf()
-
-        # Return the PNG file as a Base64 string
-        return base64.encodestring(png_file.getvalue()).decode('utf-8')
+        return plot.base64
 
     @property
     def name(self):
