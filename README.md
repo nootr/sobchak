@@ -9,6 +9,34 @@ Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
 which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 
+## Installation
+
+Sobchak uses the OpenStack library to fetch hypervisor/instance info, so you'll
+need to install the needed dependencies (preferably in a virtual environment):
+
+```bash
+$ virtualenv -p python3 venv
+$ source venv/bin/activate
+$ pip install -r requirements.txt
+```
+
+## Usage
+
+Make sure you've sourced your OpenStack openrc file, adjust the values set in
+`config.yaml` and the rest is as easy as it gets:
+
+```bash
+$ ./sobchak
+```
+
+To generate a more human-readable report containing management-pleasing graphs
+and information about the improvements made, just add the `--generate-report` or
+`-R` argument.
+
+```bash
+$ ./sobchak -R
+```
+
 ## How a list of migrations is generated
 
 ### Forming a strategy
@@ -74,12 +102,12 @@ has the ability to improve another hypervisor's score by exchanging VMs.
 
 Let's set some definitions: a VM resource ratio which steers left or right
 compared to the most common ratio gives its hypervisor
-**left-/right-divagating control**.
+**left-/right-divergent control**.
 
-![Left-/right-divagating control](img/README-4.png)
+![Left-/right-divergent control](img/README-4.png)
 
-*Fig. 4: The blue dashed line represents right-divagating control, the green
-dashed line represents left-divagating control.*
+*Fig. 4: The blue dashed line represents right-divergent control, the green
+dashed line represents left-divergent control.*
 
 ### Mixing and matching hypervisors
 
@@ -98,31 +126,3 @@ more hypervisors which contain:
 
 TBD
 
-## Installation
-
-By default, Sobchak uses the OpenStack library to fetch hypervisor/instance
-info, so you'll need to install the needed dependencies in a virtual
-environment:
-
-```bash
-$ virtualenv -p python3 venv
-$ source venv/bin/activate
-$ pip install -r requirements.txt
-```
-
-## Usage
-
-Make sure you've sourced your OpenStack openrc file, adjust the values set in
-`config.yaml` and the rest is as easy as it gets:
-
-```bash
-$ ./sobchak
-```
-
-To generate a more human-readable report containing management-pleasing graphs
-and information about the improvements made, just add the `--generate-report` or
-`-R` argument.
-
-```bash
-$ ./sobchak -R
-```

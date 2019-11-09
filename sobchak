@@ -126,6 +126,82 @@ class Plot(object):
         return base64.encodestring(image).decode('utf-8')
 
 
+class Report(object):
+    """Report
+
+    A Report object generates a report in the form of a HTML-page of a list of
+    hypervisors and information about how certain migrations improve the
+    resource distribution.
+    """
+
+    def __init__(self, inventory):
+        self._inventory = inventory
+
+    def _generate_hypervisor_report(self, hypervisor):
+        """_plot_hypervisor
+
+        Returns the report for a single hypervisor.
+        """
+        def dict_to_table(dictionary):
+            """dict_to_table
+
+            Converts a dictionary to an HTML table.
+            """
+            table_contents = ''
+            for key, value in dictionary.items():
+                if isinstance(value, list):
+                    _value = '<br />'.join(value)
+                else:
+                    _value = str(value)
+
+                table_contents += '<tr>'
+                table_contents += '<th scope="row" valign="top" align="right">'
+                table_contents += '{}</th><td>{}</td>'.format(key, _value)
+
+            return '<table>{}</table>'.format(table_contents)
+
+        plot = '<img src="data:image/png;base64,' + hypervisor.plot + '"/>'
+        table = dict_to_table(hypervisor.to_dict())
+
+        return '<div class="row">' + \
+               '<div class="column">{}</div>'.format(table) + \
+               '<div class="column">{}</div>'.format(plot) + \
+               '</div>'
+
+    @property
+    def head(self):
+        """head
+
+        Returns the HTML head of the report.
+        """
+        return '<head><style>' + \
+               'th,td{ border-bottom: 1px solid #ddd; }' + \
+               'tr:hover{ background-color:#f5f5f5; }.column{' + \
+               'float:left;width:50%;padding:10px;height:100%;}' + \
+               '*{box-sizing:border-box;}' + \
+               '</style></head>'
+
+    @property
+    def body(self):
+        """body
+
+        Returns the HTML body of the report.
+        """
+        body = '<h1>Migration report</h>'
+        for hypervisor in self._inventory.hypervisors:
+            body += self._generate_hypervisor_report(hypervisor)
+
+        return '<body>{}</body>'.format(body)
+
+    @property
+    def page(self):
+        """page
+
+        Returns the report as HTML.
+        """
+        return '<html>{}{}</html>'.format(self.head, self.body)
+
+
 class Inventory(object):
     """Inventory
 
@@ -153,30 +229,10 @@ class Inventory(object):
     def generate_report(self):
         """generate_report
 
-        Generates a report in HTML-format.
+        A messy method which generates a report in HTML-format.
         """
-        head = '<style>th,td{border-bottom:1px solid #ddd;}' + \
-               'tr:hover{background-color:#f5f5f5;}.column{' + \
-               'float:left;width:50%;padding:10px;height:100%;}' + \
-               '*{box-sizing:border-box;}</style>'
-        body = '<h1>Migration report</h>'
-        for h in self.hypervisors:
-            plot = '<img src="data:image/png;base64,' + h.plot + '"/>'
-            table = '<table>'
-            for key, value in h.to_dict().items():
-                if isinstance(value, list):
-                    _value = '<br />'.join(value)
-                else:
-                    _value = str(value)
-                table += '<tr><th scope="row" valign="top" align="right">' + \
-                        key + '</th><td>' + _value + '</td>'
-            table += '</table>'
-            hypervisor_report = '<div class="row"><div class="column">' + \
-                table + '</div><div class="column">' + plot + '</div></div>'
-            body += hypervisor_report
-        page = '<html><head>' + head + '</head>' + \
-                '<body>' + body + '</body></html>'
-        return page
+        report = Report(self)
+        return report.page
 
     @property
     def hypervisors(self):
