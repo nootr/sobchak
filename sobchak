@@ -10,6 +10,7 @@ import base64
 
 from matplotlib import pyplot, patches
 from io import BytesIO
+from math import atan
 
 from keystoneauth1.identity import v3
 from keystoneauth1 import session as keystone_session
@@ -444,10 +445,11 @@ class CustomHypervisor(Hypervisor):
             """
             return x / (1 + abs(x))
 
+        # TODO: Account for CPU/RAM cost
         weight_ram = _sigmoid( self.available_ram / self.memory_mb )
         weight_vcpus = _sigmoid( self.available_vcpus / self.vcpus )
-        #return int((common_ratio - self.ratio) * (weight_ram + weight_vcpus))
-        return int(common_ratio - self.ratio)
+        angle = atan(common_ratio) - atan(self.ratio)
+        return angle * (weight_ram + weight_vcpus)
 
     def add_server(self, server):
         """add_server
