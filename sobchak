@@ -68,7 +68,8 @@ class Plot(object):
 
     Generates a graph and converts it to a base64-decoded PNG file.
     """
-    def __init__(self, width, height):
+
+    def __init__(self, width, height, title, xlabel, ylabel):
         self.width = width
         self.height = height
         self._png_file = BytesIO()
@@ -77,6 +78,9 @@ class Plot(object):
         pyplot.ylim(1.1 * height)
         pyplot.gca().invert_xaxis()
         pyplot.gca().invert_yaxis()
+        pyplot.title(title)
+        pyplot.xlabel(xlabel)
+        pyplot.ylabel(ylabel)
 
     def __del__(self):
         """__del__
@@ -85,15 +89,15 @@ class Plot(object):
         """
         pyplot.clf()
 
-    def add_graph(self, x, y):
+    def add_graph(self, x, y, label):
         """add_graph
 
         Turn two lists representing x and y values into a plot and add it to
         the graph.
         """
-        pyplot.plot(x[:len(y)], y[:len(x)])
+        pyplot.plot(x[:len(y)], y[:len(x)], label=label)
 
-    def add_box(self, width, height, color='b'):
+    def add_box(self, width, height, label, color='b'):
         """add_box
 
         Add a box with a given width and height of a given color (blue by
@@ -105,6 +109,7 @@ class Plot(object):
             height,
             linewidth=1,
             edgecolor=color,
+            label=label,
             facecolor='none')
         pyplot.gca().add_patch(rect)
 
@@ -114,6 +119,7 @@ class Plot(object):
 
         Saves the current plot to the in-memory PNG file and returns the file.
         """
+        pyplot.legend()
         pyplot.savefig(self._png_file, format='png')
         return self._png_file
 
@@ -345,7 +351,7 @@ class CustomHypervisor(Hypervisor):
         # Generate a plot
         width = self.memory_mb * self._ram_overcommit - self._memory_overhead
         height = self.vcpus * self._cpu_overcommit
-        plot = Plot(width, height)
+        plot = Plot(width, height, self.name, 'memory [MB]', 'VCPUs')
 
         # Draw graphs representing VMs
         x = [ i for i in range(width) ]
@@ -354,10 +360,10 @@ class CustomHypervisor(Hypervisor):
             dy_dx = vm.vcpus / vm.ram
             for _ in range(vm.ram):
                 y.append(y[-1] + dy_dx)
-        plot.add_graph(x, y)
+        plot.add_graph(x, y, 'Hosted VMs')
 
         # Draw box representing hypervisor resources
-        plot.add_box(width, height)
+        plot.add_box(width, height, 'Available resources')
 
         # Draw graphs representing common ratio
         dx = self._common_ratio
@@ -370,7 +376,7 @@ class CustomHypervisor(Hypervisor):
             y.append(next_y)
             next_x -= dx
             next_y -= 1
-        plot.add_graph(x, y)
+        plot.add_graph(x, y, 'Most common resource ratio')
 
         return plot.base64
 
