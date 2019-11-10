@@ -124,5 +124,24 @@ more hypervisors which contain:
 
 ### Generating a list of migrations
 
-TBD
+Every iteration, until no improvement has been made:
+
+- Determine which enabled hypervisor has the worst score.
+- Determine which of the other enabled hypervisors has the highest divergence
+  needed for the first hypervisor.
+- Take all VMs and fill the first hypervisor with the VMs which leaves it with
+  the lowest score.
+- Place the remaining VMs on the second hypervisor.
+- Break if migrations won't improve the sum of the scores.
+- Generate a list of needed migrations.
+  - If some migrations are possible: add the migration of the VM with the largest
+    resource vector to the `migration` list.
+  - If none of the migrations are possible: take another enabled hypervisor
+    which the most unassigned resources and migrate the VM with the largest
+    resource vector possible to that hypervisor (break if no VMs can be
+    migrated, optimize if migrated VM has already been migrated before or update
+    needed migrations if VM is yet to be migrated). Add the reversed migration
+    to a seperate `post-migration` list.
+  - If all migrations have been completed: append the `post-migration` list to
+    the `migration` list.
 
