@@ -60,9 +60,13 @@ def mix_hypervisors(subject, improvement):
     `improvement` which has the divergence which enables the improvement) and
     mixes their VMs to improve the overall score.
 
-    Returns a list of VMs which need to be migrated if the combined score is
-    lowered, otherwise returns None. Also returns None if the VMs do not fit on
-    the two hypervisors (e.g. due to scheduling issues).
+    Returns a list of migrations if the combined score is lowered, otherwise
+    returns None. Also returns None if the VMs do not fit on the two hypervisors
+    (e.g. due to bad scheduling).
+
+    Note that the list of migrations that is generated does not take hypervisor
+    resources into account, so shuffling between a third node is needed when
+    there's not enough free resources to migrate certain VMs.
     """
     def _score_with_vm(hypervisor, vm):
         """_score_with_vm
@@ -106,8 +110,10 @@ def mix_hypervisors(subject, improvement):
         improvement.servers = improvement_vms
         return None
 
-    return [s for s in improvement.servers if s not in improvement_vms] + \
-        [s for s in subject.servers if s not in subject_vms]
+    return [Migration(s, subject, improvement) for s in subject.servers \
+            if s not in subject_vms] + \
+           [Migration(s, improvement, subject) for s in improvement.servers \
+            if s not in improvement_vms]
 
 
 class Session(keystone_session.Session):
@@ -124,6 +130,24 @@ class Session(keystone_session.Session):
             project_id=PROJECT_ID,
             user_domain_name='Default')
         keystone_session.Session.__init__(self, auth=auth)
+
+
+class Migration(object):
+    """Migration
+
+    Contains information about a migration; a VM, a source and a destination.
+    """
+    def __init__(self, vm, source, destination):
+        self.vm = vm
+        self.source = source
+        self.destination = destination
+
+    def __str__(self):
+        return 'openstack server migrate {} --host {}'.format(self.vm.id,
+                self.destination.name)
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Plot(object):
@@ -244,7 +268,10 @@ class Report(object):
 
         Adds the migrations to the report.
         """
-        self._migration_report = '<h2>Migrations</h2>{}'.format(str(migrations))
+        code_block = lambda c: '<pre><code>' + c + '</code></pre>'
+        migration_list = '<br />'.join([str(m) for m in migrations])
+        title = '<h2>Migrations</h2>'
+        self._migration_report = title + code_block(migration_list)
 
     @property
     def head(self):
@@ -304,16 +331,6 @@ class Inventory(object):
                 'common_ratio': self.common_ratio,
                 'inventory': [ h.to_dict() for h in self.hypervisors ]
                 }
-
-    def generate_report(self):
-        """generate_report
-
-        A messy method which generates a report in HTML-format.
-        """
-        report = Report(self)
-        migrations = self.optimize()
-        report.add_migrations(migrations)
-        return report.page
 
     @property
     def hypervisors(self):
@@ -411,6 +428,16 @@ class Inventory(object):
 
         return self._flavors
 
+    def _plan_migrations(self, needed_migrations):
+        """_plan_migrations
+
+        Takes a list of Migration objects and determine which migrations need to
+        be done to realize this. Returns a list of Migration objects or an empty
+        list if it's not possible.
+        """
+        # TODO implement
+        return needed_migrations
+
     def optimize(self):
         """optimize
 
@@ -431,10 +458,9 @@ class Inventory(object):
 
             needed_migrations = mix_hypervisors(subject, improvement)
             if needed_migrations:
-                break
+                return self._plan_migrations(needed_migrations)
 
-        # TODO afmaken
-        return needed_migrations
+        return []
 
 
 class CustomHypervisor(Hypervisor):
@@ -454,6 +480,12 @@ class CustomHypervisor(Hypervisor):
         self._gave_cpu_warning = False
         self._gave_ram_warning = False
         logging.debug('Initialized hypervisor: %s', self.id)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.__str__()
 
     def verify_available_resources(self):
         """verify_available_resources
@@ -790,10 +822,16 @@ def run(configfile, debug, generate_report):
     # Create inventory
     inventory = Inventory(nova, config)
 
+    # Generate and print migration list
+    migrations = inventory.optimize()
+    print(migrations)
+
     # Generate report (if needed)
     if generate_report:
-        with open('report.html', 'w+') as report:
-            report.write(inventory.generate_report())
+        report = Report(inventory)
+        report.add_migrations(migrations)
+        with open('report.html', 'w+') as f:
+            f.write(report.page)
             print('Report available: {}'.format(os.path.abspath('report.html')))
 
 if __name__ == "__main__":
