@@ -151,7 +151,7 @@ class Plot(object):
 
         Saves the current plot to the in-memory PNG file and returns the file.
         """
-        pyplot.legend()
+        pyplot.legend(loc='lower right')
         pyplot.savefig(self._png_file, format='png')
         return self._png_file
 
@@ -959,7 +959,7 @@ def run(configfile, debug, verbose, generate_report):
 
     # Generate and print migration list
     migrations = inventory.optimize()
-    print('\n'.join(migrations))
+    print('\n'.join([str(m) for m in migrations]))
 
     # Generate report (if needed)
     if generate_report:
