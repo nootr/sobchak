@@ -53,68 +53,6 @@ def get_object_by_id(objects, identifier):
     logging.info('Could not find %s inside %s', identifier, objects)
     return None
 
-def mix_hypervisors(subject, improvement):
-    """mix_hypervisors
-
-    Takes two hypervisors (a `subject` which is to be improved and an
-    `improvement` which has the divergence which enables the improvement) and
-    mixes their VMs to improve the overall score.
-
-    Returns a list of migrations if the combined score is lowered, otherwise
-    returns None. Also returns None if the VMs do not fit on the two hypervisors
-    (e.g. due to bad scheduling).
-
-    Note that the list of migrations that is generated does not take hypervisor
-    resources into account, so shuffling between a third node is needed when
-    there's not enough free resources to migrate certain VMs.
-    """
-    def _score_with_vm(hypervisor, vm):
-        """_score_with_vm
-
-        Returns the score a hypervisor would have if it hosted a given VM.
-        """
-        if not hypervisor.add_server(vm):
-            return hypervisor.score
-        else:
-            score = hypervisor.score
-            hypervisor.servers = hypervisor.servers[:-1]
-            return score
-
-    logging.info('Mixing %s and %s', subject.name, improvement.name)
-    score_before = abs(subject.score) + abs(improvement.score)
-    subject_vms = subject.pop()
-    improvement_vms = improvement.pop()
-    vms = subject_vms + improvement_vms
-
-    while vms:
-        best_vm = min(vms, key=lambda vm: abs(_score_with_vm(subject, vm)))
-        logging.debug('Adding %i MB, %i CPU to %s', best_vm.ram, best_vm.vcpus,
-                subject.name)
-        if not subject.add_server(best_vm):
-            break
-        vms.remove(best_vm)
-
-    for vm in vms:
-        logging.debug('Adding %i MB, %i CPU to %s', vm.ram, vm.vcpus,
-                improvement.name)
-        if not improvement.add_server(vm):
-            logging.warning('Could not fit VMs in hypervisors!')
-            subject.servers = subject_vms
-            improvement.servers = improvement_vms
-            return None
-
-    score_after = abs(subject.score) + abs(improvement.score)
-    logging.info('Score from %f to %f', score_before, score_after)
-    if score_after >= score_before:
-        subject.servers = subject_vms
-        improvement.servers = improvement_vms
-        return None
-
-    return [Migration(s, subject, improvement) for s in subject.servers \
-            if s not in subject_vms] + \
-           [Migration(s, improvement, subject) for s in improvement.servers \
-            if s not in improvement_vms]
-
 
 class Session(keystone_session.Session):
     """Session
@@ -332,6 +270,22 @@ class Inventory(object):
                 'inventory': [ h.to_dict() for h in self.hypervisors ]
                 }
 
+    def snapshot(self):
+        """snapshot
+
+        Saves a snapshot of the current inventory.
+        """
+        for hypervisor in self.hypervisors:
+            hypervisor.snapshot()
+
+    def use_snapshot(self):
+        """use_snapshot
+
+        Reverts to the last snapshot.
+        """
+        for hypervisor in self.hypervisors:
+            hypervisor.use_snapshot()
+
     @property
     def hypervisors(self):
         """hypervisors
@@ -353,6 +307,7 @@ class Inventory(object):
                 hypervisor.add_server(vm, force=True)
 
             assert hypervisor.verify_available_resources()
+            self.snapshot()
 
         return self._hypervisors
 
@@ -428,15 +383,92 @@ class Inventory(object):
 
         return self._flavors
 
+    def _increase_buffer(self, hypervisor, skip=[]):
+        """_increase_buffer
+
+        Returns a set of migrations which will temporarily give a given
+        hypervisor extra available resources. Does not use the hypervisors given
+        in `skip` as a buffer.
+        """
+        pass # TODO
+
     def _plan_migrations(self, needed_migrations):
         """_plan_migrations
 
-        Takes a list of Migration objects and determine which migrations need to
-        be done to realize this. Returns a list of Migration objects or an empty
-        list if it's not possible.
+        Takes a list of Migration objects and determine which actual migrations
+        need to be done to realize this (as some migrations will not be possible
+        due to insufficient available resources). Returns a list of Migration
+        objects or an empty list if it's not possible.
         """
-        # TODO implement
+        migrations = []
+        for migration in needed_migrations:
+            assert migration.source.remove_server(migration.server)
+            while not migration.destination.add_server(migration.server):
+                logging.info('Unable to migrate server %s, adding buffer.',
+                        migration.server)
+                if not self._increase_buffer(destination, skip=[source]):
+                    return []
+
         return needed_migrations
+
+    def _score_with_vm(self, hypervisor, vm):
+        """_score_with_vm
+
+        Returns the score a hypervisor would have if it hosted a given VM.
+        """
+        if not hypervisor.add_server(vm):
+            return hypervisor.score
+        else:
+            score = hypervisor.score
+            assert hypervisor.remove_server(vm)
+            return score
+
+    def _mix_hypervisors(self, subject, improvement):
+        """_mix_hypervisors
+
+        Takes two hypervisors (a `subject` which is to be improved and an
+        `improvement` which has the divergence which enables the improvement) and
+        mixes their VMs to improve the overall score.
+
+        Returns a list of migrations if the combined score is lowered, otherwise
+        returns None. Also returns None if the VMs do not fit on the two hypervisors
+        (e.g. due to bad scheduling).
+
+        Note that the list of migrations that is generated does not take hypervisor
+        resources into account, so shuffling between a third node is needed when
+        there's not enough free resources to migrate certain VMs.
+        """
+        logging.info('Mixing %s and %s', subject.name, improvement.name)
+        score_before = abs(subject.score) + abs(improvement.score)
+        subject_vms = subject.pop()
+        improvement_vms = improvement.pop()
+        vms = subject_vms + improvement_vms
+
+        while vms:
+            best_vm = min(vms,
+                    key=lambda vm: abs(self._score_with_vm(subject, vm)))
+            if not subject.add_server(best_vm):
+                break
+            vms.remove(best_vm)
+
+        for vm in vms:
+            if not improvement.add_server(vm):
+                logging.warning('Could not fit VMs in hypervisors!')
+                subject.servers = subject_vms
+                improvement.servers = improvement_vms
+                return None
+
+        score_after = abs(subject.score) + abs(improvement.score)
+        logging.info('Score from %f to %f', score_before, score_after)
+        if score_after >= score_before:
+            subject.servers = subject_vms
+            improvement.servers = improvement_vms
+            return None
+
+        return [Migration(s, subject, improvement) for s in subject.servers \
+                if s not in subject_vms] + \
+               [Migration(s, improvement, subject) for s in improvement.servers \
+                if s not in improvement_vms]
 
     def optimize(self):
         """optimize
@@ -444,8 +476,7 @@ class Inventory(object):
         Generates and returns a list of migrations to improve Hypervisor
         resource distribution.
         """
-        # Improve each hypervisor, starting at the worst one, until no
-        # improvement has been made.
+        # TODO Re-generate score-sorted hypervisor list after each improvement
         for subject in reversed(sorted(self.enabled_hypervisors, \
                 key=lambda h: abs(h.score))):
             if subject.score < 0:
@@ -456,9 +487,12 @@ class Inventory(object):
             if not improvement:
                 continue
 
-            needed_migrations = mix_hypervisors(subject, improvement)
+            needed_migrations = self._mix_hypervisors(subject, improvement)
+            self.use_snapshot()
             if needed_migrations:
-                return self._plan_migrations(needed_migrations)
+                migrations = self._plan_migrations(needed_migrations)
+                if migrations:
+                    return migrations
 
         return []
 
@@ -473,6 +507,7 @@ class CustomHypervisor(Hypervisor):
     def __init__(self, hypervisor, common_ratio, config={}):
         Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
         self.servers = []
+        self._server_snapshot = []
         self._common_ratio = common_ratio
         self._ram_overcommit = config.get('ram_overcommit', 1)
         self._cpu_overcommit = config.get('cpu_overcommit', 4)
@@ -486,6 +521,20 @@ class CustomHypervisor(Hypervisor):
 
     def __repr__(self):
         return self.__str__()
+
+    def snapshot(self):
+        """snapshot
+
+        Saves the current VM list.
+        """
+        self._server_snapshot = self.servers
+
+    def use_snapshot(self):
+        """use_snapshot
+
+        Resets the VM list to the last snapshot.
+        """
+        self.servers = self._server_snapshot
 
     def verify_available_resources(self):
         """verify_available_resources
@@ -679,6 +728,18 @@ class CustomHypervisor(Hypervisor):
             return False
         self.servers.append(server)
         return True
+
+    def remove_server(self, server):
+        """remove_server
+
+        Removes a given VM from this hypervisor. Returns True on success,
+        otherwise (if the VM wasn't found on this server) returns False.
+        """
+        try:
+            self.servers.remove(server)
+            return True
+        except ValueError:
+            return False
 
 
 class CustomServer(Server):
