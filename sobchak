@@ -202,8 +202,8 @@ class Report(object):
 
             return '<table>{}</table>'.format(table_contents)
 
-        plot = '<img src="data:image/png;base64,' + hypervisor.plot + '"/>'
         table = _dict_to_table(hypervisor.to_dict())
+        plot = '<img src="data:image/png;base64,' + hypervisor.plot + '"/>'
 
         return '<div class="row">' + \
                '<div class="column">{}</div>'.format(table) + \
@@ -640,11 +640,14 @@ class CustomHypervisor(Hypervisor):
         return dictionary
 
     @property
-    def plot(self):
+    def plot(self, include_snapshot=True):
         """plot
 
         Generates a plot of the hypervisor and its resources and returns it as a
         Base64 decoded string.
+
+        Warning: enabling `include_snapshot` will actually revert the hypervisor
+        to the last snapshot!
         """
         # Generate a plot
         width = self.memory_mb * self._ram_overcommit - self._memory_overhead
@@ -652,13 +655,22 @@ class CustomHypervisor(Hypervisor):
         plot = Plot(width, height, self.name, 'memory [MB]', 'VCPUs')
 
         # Draw graphs representing VMs
-        x = [ i for i in range(width) ]
-        y = [ 0 ]
-        for vm in self.servers:
-            dy_dx = vm.vcpus / vm.ram
-            for _ in range(vm.ram):
-                y.append(y[-1] + dy_dx)
-        plot.add_graph(x, y, 'Hosted VMs')
+        def _generate_data(servers):
+            x = [ i for i in range(width) ]
+            y = [ 0 ]
+            for vm in servers:
+                dy_dx = vm.vcpus / vm.ram
+                for _ in range(vm.ram):
+                    y.append(y[-1] + dy_dx)
+            return x, y
+
+        x, y = _generate_data(self.servers)
+        plot.add_graph(x, y, 'Hosted VMs (after)')
+
+        if include_snapshot:
+            self.use_snapshot()
+            x, y = _generate_data(self.servers)
+            plot.add_graph(x, y, 'Hosted VMs (before)')
 
         # Draw box representing hypervisor resources
         plot.add_box(width, height, 'Available resources')
