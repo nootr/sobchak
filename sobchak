@@ -75,17 +75,26 @@ class Migration(object):
 
     Contains information about a migration; a VM, a source and a destination.
     """
-    def __init__(self, vm, source, destination):
-        self.vm = vm
+    def __init__(self, server, source, destination):
+        self.server = server
         self.source = source
         self.destination = destination
 
     def __str__(self):
-        return 'openstack server migrate {} --host {}'.format(self.vm.id,
-                self.destination.name)
+        return 'openstack server migrate {} --host {} #{} from {} to {}'.format(
+                self.server.id, self.destination.name, self.server, self.source,
+                self.destination)
 
     def __repr__(self):
         return self.__str__()
+
+    @property
+    def reverse(self):
+        """reverse
+
+        Returns the opposite migration.
+        """
+        return Migration(self.server, self.destination, self.source)
 
 
 class Plot(object):
@@ -232,6 +241,7 @@ class Report(object):
         """
         body = '<h1>Migration report</h>'
         body += self._migration_report
+        body += '<h2>Hypervisors</h2>'
         for hypervisor in self._inventory.hypervisors:
             body += self._generate_hypervisor_report(hypervisor)
 
@@ -295,6 +305,7 @@ class Inventory(object):
         hypervisors.
         """
         if not self._hypervisors:
+            logging.info('Fetching hypervisor info')
             self._hypervisors = [
                     CustomHypervisor(h, self.common_ratio, self._config)
                     for h in self._client.hypervisors.list() ]
@@ -318,6 +329,7 @@ class Inventory(object):
         Returns a list of VM's as CustomServer objects.
         """
         if not self._vms:
+            logging.info('Fetching VM info')
             opts = { 'all_tenants': True }
             self._vms = [ CustomServer(vm, self.flavors) \
                     for vm in self._client.servers.list(search_opts=opts)
@@ -383,14 +395,56 @@ class Inventory(object):
 
         return self._flavors
 
-    def _increase_buffer(self, hypervisor, skip=[]):
+    def _increase_buffer(self, hypervisor, skip_hypervisors=[],
+            skip_servers=[]):
         """_increase_buffer
 
-        Returns a set of migrations which will temporarily give a given
-        hypervisor extra available resources. Does not use the hypervisors given
-        in `skip` as a buffer.
+        Returns a migration which will temporarily give a given hypervisor extra
+        available resources. Does not use the hypervisors given in `skip` as a
+        buffer.
         """
-        pass # TODO
+        potential_buffers = [h for h in self.enabled_hypervisors \
+                if h not in skip_hypervisors and h is not hypervisor]
+        servers = [s for s in hypervisor.servers if s not in skip_servers]
+
+        buffers = reversed(sorted(potential_buffers,
+                key=lambda h: h.available_vcpus * h.available_ram))
+
+        sorted_servers = reversed(sorted(servers, key=lambda s: s.length))
+
+        for buff in buffers:
+            for server in sorted_servers:
+                if buff.add_server(server):
+                    logging.info('======= increase buffer %s =======', server)
+                    assert hypervisor.remove_server(server)
+                    return Migration(server, hypervisor, buff)
+
+        logging.warning('Could not find available resources to migrate!')
+        return None
+
+    def _try_migration(self, migration):
+        """_try_migration
+
+        Tries a migration and adds a migration to a buffer hypervisor if needed.
+        Returns a tuple containing a list of migrations and an optional post
+        migration.
+        """
+        assert migration.source.remove_server(migration.server)
+        migrations = [migration]
+        post_migration = None
+        while not migration.destination.add_server(migration.server):
+            logging.info('Unable to migrate server %s, adding buffer.',
+                    migration.server)
+            buffer_migration = self._increase_buffer(migration.destination,
+                    skip_hypervisors=[migration.source],
+                    skip_servers=[migration.server])
+            if buffer_migration:
+                migrations.append(buffer_migration)
+                post_migration = buffer_migration.reverse
+                post_migration.destination = migration.source
+            else:
+                return None
+        return (migrations, post_migration)
 
     def _plan_migrations(self, needed_migrations):
         """_plan_migrations
@@ -401,15 +455,24 @@ class Inventory(object):
         objects or an empty list if it's not possible.
         """
         migrations = []
-        for migration in needed_migrations:
-            assert migration.source.remove_server(migration.server)
-            while not migration.destination.add_server(migration.server):
-                logging.info('Unable to migrate server %s, adding buffer.',
-                        migration.server)
-                if not self._increase_buffer(destination, skip=[source]):
-                    return []
+        skip_servers = []
 
-        return needed_migrations
+        for migration in needed_migrations:
+            if migration.server in skip_servers:
+                skip_servers.remove(migration.server)
+                continue
+            new_migrations = self._try_migration(migration)
+            if not new_migrations:
+                logging.warning('Could not get enough free resources.')
+                self.use_snapshot()
+                return []
+            new_migration, post_migration = new_migrations
+            migrations.extend(new_migration)
+            if post_migration:
+                skip_servers.append(post_migration.server)
+                needed_migrations.append(post_migration)
+
+        return migrations
 
     def _score_with_vm(self, hypervisor, vm):
         """_score_with_vm
@@ -465,9 +528,9 @@ class Inventory(object):
             improvement.servers = improvement_vms
             return None
 
-        return [Migration(s, subject, improvement) for s in subject.servers \
+        return [Migration(s, improvement, subject) for s in subject.servers \
                 if s not in subject_vms] + \
-               [Migration(s, improvement, subject) for s in improvement.servers \
+               [Migration(s, subject, improvement) for s in improvement.servers \
                 if s not in improvement_vms]
 
     def optimize(self):
@@ -490,9 +553,7 @@ class Inventory(object):
             needed_migrations = self._mix_hypervisors(subject, improvement)
             self.use_snapshot()
             if needed_migrations:
-                migrations = self._plan_migrations(needed_migrations)
-                if migrations:
-                    return migrations
+                return self._plan_migrations(needed_migrations)
 
         return []
 
@@ -726,6 +787,7 @@ class CustomHypervisor(Hypervisor):
         if not force and (server.ram > self.available_ram or \
                 server.vcpus > self.available_vcpus):
             return False
+        logging.info('Adding %s to %s', server, self)
         self.servers.append(server)
         return True
 
@@ -733,12 +795,17 @@ class CustomHypervisor(Hypervisor):
         """remove_server
 
         Removes a given VM from this hypervisor. Returns True on success,
-        otherwise (if the VM wasn't found on this server) returns False.
+        otherwise (e.g. if the VM wasn't found on this server) returns False.
         """
-        try:
-            self.servers.remove(server)
+        logging.info('Removing %s from %s', server, self)
+        filtered_servers = [s for s in self.servers if s.id != server.id]
+        # TODO Werkend maken met server.id als identifier
+        if len(filtered_servers) == len(self.servers) - 1:
+            self.servers = filtered_servers
             return True
-        except ValueError:
+        else:
+            logging.error('Error while removing %s from %s: VM count %d -> %d',
+                    server, self, len(self.servers), len(filtered_servers))
             return False
 
 
@@ -848,22 +915,29 @@ hypervisor resources.
 
     parser.add_argument('-c', '--configfile', action='store',
                         help='Configuration file.')
+    parser.add_argument('-v', '--verbose',
+                        help='Enable verbose logs', action='store_true')
     parser.add_argument('-d', '--debug',
-                        help='Enable debug', action='store_true')
+                        help='Enable debug logs', action='store_true')
     parser.add_argument('-R', '--generate-report',
                         help='Generate a report', action='store_true')
 
     return parser.parse_args()
 
 
-def run(configfile, debug, generate_report):
+def run(configfile, debug, verbose, generate_report):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
     which migrations can be executed to improve the current resource
     distribution.
     """
-    if debug:
+    if verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s %(levelname)-8s %(message)s'
+        )
+    elif debug:
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s %(levelname)-8s %(message)s'
