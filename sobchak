@@ -59,7 +59,6 @@ class Session(keystone_session.Session):
 
     Maintains an OpenStack session which can be used by the clients.
     """
-
     def __init__(self):
         auth = v3.Password(
             auth_url=AUTH_URL,
@@ -102,7 +101,6 @@ class Plot(object):
 
     Generates a graph and converts it to a base64-decoded PNG file.
     """
-
     def __init__(self, width, height, title, xlabel, ylabel):
         self.width = width
         self.height = height
@@ -174,7 +172,6 @@ class Report(object):
     hypervisors and information about how certain migrations improve the
     resource distribution.
     """
-
     def __init__(self, inventory):
         self._inventory = inventory
         self._migration_report = ''
@@ -262,7 +259,6 @@ class Inventory(object):
     An object containing Hypervisor and VM objects which are fetched using the
     OpenStack API.
     """
-
     def __init__(self, novaclient, config={}):
         self._client = novaclient
         self._config = config
@@ -416,7 +412,7 @@ class Inventory(object):
             for server in sorted_servers:
                 if buff.add_server(server):
                     logging.info('======= increase buffer %s =======', server)
-                    assert hypervisor.remove_server(server)
+                    hypervisor.remove_server(server)
                     return Migration(server, hypervisor, buff)
 
         logging.warning('Could not find available resources to migrate!')
@@ -429,7 +425,7 @@ class Inventory(object):
         Returns a tuple containing a list of migrations and an optional post
         migration.
         """
-        assert migration.source.remove_server(migration.server)
+        migration.source.remove_server(migration.server)
         migrations = [migration]
         post_migration = None
         while not migration.destination.add_server(migration.server):
@@ -483,7 +479,7 @@ class Inventory(object):
             return hypervisor.score
         else:
             score = hypervisor.score
-            assert hypervisor.remove_server(vm)
+            hypervisor.remove_server(vm)
             return score
 
     def _mix_hypervisors(self, subject, improvement):
@@ -564,7 +560,6 @@ class CustomHypervisor(Hypervisor):
     A CustomHypervisor object contains information about its available resources
     and the VMs it hosts.
     """
-
     def __init__(self, hypervisor, common_ratio, config={}):
         Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
         self.servers = []
@@ -811,14 +806,8 @@ class CustomHypervisor(Hypervisor):
         """
         logging.info('Removing %s from %s', server, self)
         filtered_servers = [s for s in self.servers if s.id != server.id]
-        # TODO Werkend maken met server.id als identifier
-        if len(filtered_servers) == len(self.servers) - 1:
-            self.servers = filtered_servers
-            return True
-        else:
-            logging.error('Error while removing %s from %s: VM count %d -> %d',
-                    server, self, len(self.servers), len(filtered_servers))
-            return False
+        assert len(filtered_servers) == len(self.servers) - 1
+        self.servers = filtered_servers
 
 
 class CustomServer(Server):
@@ -827,7 +816,6 @@ class CustomServer(Server):
     A CustomServer object contains information about an OpenStack instance and
     the resources it needs.
     """
-
     def __init__(self, server, flavors):
         Server.__init__(self, server.manager, server._info)
         self._flavor = get_object_by_id(flavors, self.flavor['id'])
@@ -971,7 +959,7 @@ def run(configfile, debug, verbose, generate_report):
 
     # Generate and print migration list
     migrations = inventory.optimize()
-    print(migrations)
+    print('\n'.join(migrations))
 
     # Generate report (if needed)
     if generate_report:
