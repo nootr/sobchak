@@ -435,9 +435,8 @@ class Inventory(object):
                     skip_hypervisors=[migration.source],
                     skip_servers=[migration.server])
             if buffer_migration:
-                migrations.append(buffer_migration)
+                migrations.insert(0, buffer_migration)
                 post_migration = buffer_migration.reverse
-                post_migration.destination = migration.source
             else:
                 return None
         return (migrations, post_migration)
@@ -445,7 +444,7 @@ class Inventory(object):
     def _plan_migrations(self, needed_migrations):
         """_plan_migrations
 
-        Takes a list of Migration objects and determine which actual migrations
+        Takes a list of Migration objects and determines which actual migrations
         need to be done to realize this (as some migrations will not be possible
         due to insufficient available resources). Returns a list of Migration
         objects or an empty list if it's not possible.
@@ -465,9 +464,17 @@ class Inventory(object):
             new_migration, post_migration = new_migrations
             migrations.extend(new_migration)
             if post_migration:
-                skip_servers.append(post_migration.server)
+                if post_migration.server in [m.server for m in \
+                        needed_migrations if m not in migrations]:
+                    skip_servers.append(post_migration.server)
+                    destinations = [m.destination for m in needed_migrations \
+                            if m.server == post_migration.server]
+                    assert len(destinations) == 1
+                    post_migration.destination = destinations[0]
                 needed_migrations.append(post_migration)
 
+        # TODO Check number of VM's, no duplicates, all migrations from
+        # snapshot possible
         return migrations
 
     def _score_with_vm(self, hypervisor, vm):
