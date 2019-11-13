@@ -281,6 +281,7 @@ class Inventory(object):
 
         Saves a snapshot of the current inventory.
         """
+        logging.debug('Taking snapshot')
         for hypervisor in self.hypervisors:
             hypervisor.snapshot()
 
@@ -289,6 +290,7 @@ class Inventory(object):
 
         Reverts to the last snapshot.
         """
+        logging.debug('Reverting to snapshot')
         for hypervisor in self.hypervisors:
             hypervisor.use_snapshot()
 
@@ -310,10 +312,9 @@ class Inventory(object):
                 hypervisor = get_object_by_id(self._hypervisors, vm.hypervisor)
                 if not hypervisor:
                     raise ValueError('Unknown hypervisor for %s (status: %s)',
-                            vm.name, vm.status)
+                            vm, vm.status)
                 hypervisor.add_server(vm, force=True)
 
-            assert hypervisor.verify_available_resources()
             self.snapshot()
 
         return self._hypervisors
@@ -391,8 +392,33 @@ class Inventory(object):
 
         return self._flavors
 
-    def _increase_buffer(self, hypervisor, skip_hypervisors=[],
-            skip_servers=[]):
+    def _validate_migrations(self, migrations):
+        """_validate_migrations
+
+        Validate a list of migrations on several points:
+
+        * No duplicate VMs
+        * Migrations - in order - are possible after last snapshot
+        * Same amount of VMs
+        * Disabled hypervisors are left alone
+        """
+        self.use_snapshot()
+        vm_ids = [vm.id for vm in self.vms]
+        assert len(vm_ids) == len(set(vm_ids))
+        number_of_vms = len(self.vms)
+        for migration in migrations:
+            assert migration.source.enabled
+            assert migration.destination.enabled
+            assert migration.source.remove_server(migration.server)
+            assert migration.destination.add_server(migration.server)
+
+        assert number_of_vms == len(self.vms)
+        vm_ids = [vm.id for vm in self.vms]
+        assert len(vm_ids) == len(set(vm_ids))
+        logging.info('Validated migration list')
+
+    def _increase_buffer(self, hypervisor, skip_hypervisor_ids=[],
+            skip_server_ids=[]):
         """_increase_buffer
 
         Returns a migration which will temporarily give a given hypervisor extra
@@ -400,8 +426,9 @@ class Inventory(object):
         buffer.
         """
         potential_buffers = [h for h in self.enabled_hypervisors \
-                if h not in skip_hypervisors and h is not hypervisor]
-        servers = [s for s in hypervisor.servers if s not in skip_servers]
+                if h.id not in skip_hypervisor_ids and \
+                h.id != hypervisor.id]
+        servers = [s for s in hypervisor.servers if s.id not in skip_server_ids]
 
         buffers = reversed(sorted(potential_buffers,
                 key=lambda h: h.available_vcpus * h.available_ram))
@@ -411,8 +438,7 @@ class Inventory(object):
         for buff in buffers:
             for server in sorted_servers:
                 if buff.add_server(server):
-                    logging.info('======= increase buffer %s =======', server)
-                    hypervisor.remove_server(server)
+                    assert hypervisor.remove_server(server)
                     return Migration(server, hypervisor, buff)
 
         logging.warning('Could not find available resources to migrate!')
@@ -422,24 +448,26 @@ class Inventory(object):
         """_try_migration
 
         Tries a migration and adds a migration to a buffer hypervisor if needed.
-        Returns a tuple containing a list of migrations and an optional post
-        migration.
+        Returns a tuple containing lists of migrations and optional post
+        migrations.
         """
-        migration.source.remove_server(migration.server)
-        migrations = [migration]
-        post_migration = None
+        assert migration.source.remove_server(migration.server)
+        migrations = []
+        post_migrations = []
         while not migration.destination.add_server(migration.server):
             logging.info('Unable to migrate server %s, adding buffer.',
                     migration.server)
             buffer_migration = self._increase_buffer(migration.destination,
-                    skip_hypervisors=[migration.source],
-                    skip_servers=[migration.server])
+                    skip_hypervisor_ids=[migration.source.id],
+                    skip_server_ids=[migration.server.id])
             if buffer_migration:
-                migrations.insert(0, buffer_migration)
-                post_migration = buffer_migration.reverse
+                migrations.append(buffer_migration)
+                post_migrations.append(buffer_migration.reverse)
             else:
+                migration.source.add_server(migration.server)
                 return None
-        return (migrations, post_migration)
+        migrations.append(migration)
+        return (migrations, post_migrations)
 
     def _plan_migrations(self, needed_migrations):
         """_plan_migrations
@@ -461,9 +489,9 @@ class Inventory(object):
                 logging.warning('Could not get enough free resources.')
                 self.use_snapshot()
                 return []
-            new_migration, post_migration = new_migrations
+            new_migration, post_migrations = new_migrations
             migrations.extend(new_migration)
-            if post_migration:
+            for post_migration in post_migrations:
                 if post_migration.server in [m.server for m in \
                         needed_migrations if m not in migrations]:
                     skip_servers.append(post_migration.server)
@@ -473,8 +501,7 @@ class Inventory(object):
                     post_migration.destination = destinations[0]
                 needed_migrations.append(post_migration)
 
-        # TODO Check number of VM's, no duplicates, all migrations from
-        # snapshot possible
+        self._validate_migrations(migrations)
         return migrations
 
     def _score_with_vm(self, hypervisor, vm):
@@ -486,23 +513,23 @@ class Inventory(object):
             return hypervisor.score
         else:
             score = hypervisor.score
-            hypervisor.remove_server(vm)
+            assert hypervisor.remove_server(vm)
             return score
 
     def _mix_hypervisors(self, subject, improvement):
         """_mix_hypervisors
 
         Takes two hypervisors (a `subject` which is to be improved and an
-        `improvement` which has the divergence which enables the improvement) and
-        mixes their VMs to improve the overall score.
+        `improvement` which has the divergence which enables the improvement)
+        and mixes their VMs to improve the overall score.
 
         Returns a list of migrations if the combined score is lowered, otherwise
-        returns None. Also returns None if the VMs do not fit on the two hypervisors
-        (e.g. due to bad scheduling).
+        returns None. Also returns None if the VMs do not fit on the two
+        hypervisors (e.g. due to bad scheduling).
 
-        Note that the list of migrations that is generated does not take hypervisor
-        resources into account, so shuffling between a third node is needed when
-        there's not enough free resources to migrate certain VMs.
+        Note that the list of migrations that is generated does not take
+        hypervisor resources into account, so shuffling between a third node is
+        needed when there's not enough free resources to migrate certain VMs.
         """
         logging.info('Mixing %s and %s', subject.name, improvement.name)
         score_before = abs(subject.score) + abs(improvement.score)
@@ -585,25 +612,28 @@ class CustomHypervisor(Hypervisor):
     def __repr__(self):
         return self.__str__()
 
-    def snapshot(self):
+    def snapshot(self, validate=True):
         """snapshot
 
         Saves the current VM list.
         """
-        self._server_snapshot = self.servers
+        self._server_snapshot = [s for s in self.servers]
+        if validate:
+            self.verify_available_resources()
 
-    def use_snapshot(self):
+    def use_snapshot(self, validate=True):
         """use_snapshot
 
         Resets the VM list to the last snapshot.
         """
-        self.servers = self._server_snapshot
+        self.servers = [s for s in self._server_snapshot]
+        if validate:
+            self.verify_available_resources()
 
     def verify_available_resources(self):
         """verify_available_resources
 
-        Checks if OpenStack agrees with our calculated available resources. If
-        so, returns True, else, returns False.
+        Checks if OpenStack agrees with our calculated available resources.
         """
         available_vcpus_check = self.vcpus * self._cpu_overcommit \
                 - self.vcpus_used
@@ -611,7 +641,7 @@ class CustomHypervisor(Hypervisor):
             logging.error('Calculated available VCPUs (%i) is not %i',
                     self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
-            return False
+            raise ValueError
 
         available_ram_check = self.memory_mb * self._ram_overcommit \
                 - self.memory_mb_used
@@ -619,9 +649,7 @@ class CustomHypervisor(Hypervisor):
             logging.error('Calculated available RAM (%i) is not %i',
                     self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
-            return False
-
-        return True
+            raise ValueError
 
     def to_dict(self):
         """to_dict
@@ -801,7 +829,7 @@ class CustomHypervisor(Hypervisor):
         if not force and (server.ram > self.available_ram or \
                 server.vcpus > self.available_vcpus):
             return False
-        logging.info('Adding %s to %s', server, self)
+        logging.debug('Adding %s to %s', server.name, self)
         self.servers.append(server)
         return True
 
@@ -811,10 +839,15 @@ class CustomHypervisor(Hypervisor):
         Removes a given VM from this hypervisor. Returns True on success,
         otherwise (e.g. if the VM wasn't found on this server) returns False.
         """
-        logging.info('Removing %s from %s', server, self)
+        logging.debug('Removing %s from %s', server.name, self)
         filtered_servers = [s for s in self.servers if s.id != server.id]
-        assert len(filtered_servers) == len(self.servers) - 1
-        self.servers = filtered_servers
+        if len(filtered_servers) == len(self.servers) - 1:
+            self.servers = filtered_servers
+            return True
+        else:
+            logging.error('Error while removing server %s: VM count %i -> %i',
+                    server.name, len(self.servers), len(filtered_servers))
+            return False
 
 
 class CustomServer(Server):
