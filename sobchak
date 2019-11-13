@@ -583,7 +583,22 @@ class Inventory(object):
             needed_migrations = self._mix_hypervisors(subject, improvement)
             self.use_snapshot()
             if needed_migrations:
-                return self._plan_migrations(needed_migrations)
+                migrations = self._plan_migrations(needed_migrations)
+
+                # Final optimization; merge successive migrations of the same VM
+                optimizing = True
+                while optimizing:
+                    optimizing = False
+                    for i in range(len(migrations) - 1):
+                        if migrations[i].server == migrations[i+1].server:
+                            optimizing = True
+                            migrations = migrations[:i] + \
+                                    [Migration(migrations[i].server,
+                                            migrations[i].source,
+                                            migrations[i+1].destination)] + \
+                                    migrations[i+2:]
+                            break
+                return migrations
 
         return []
 
@@ -840,7 +855,7 @@ class CustomHypervisor(Hypervisor):
         otherwise (e.g. if the VM wasn't found on this server) returns False.
         """
         logging.debug('Removing %s from %s', server.name, self)
-        filtered_servers = [s for s in self.servers if s.id != server.id]
+        filtered_servers = [s for s in self.servers if not s == server]
         if len(filtered_servers) == len(self.servers) - 1:
             self.servers = filtered_servers
             return True
@@ -866,6 +881,9 @@ class CustomServer(Server):
 
     def __repr__(self):
         return self.__str__()
+
+    def __eq__(self, other):
+        return self.id == other.id
 
     @property
     def ram(self):
