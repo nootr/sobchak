@@ -276,23 +276,23 @@ class Inventory(object):
                 'inventory': [ h.to_dict() for h in self.hypervisors ]
                 }
 
-    def snapshot(self):
+    def snapshot(self, validate=True):
         """snapshot
 
         Saves a snapshot of the current inventory.
         """
         logging.debug('Taking snapshot')
         for hypervisor in self.hypervisors:
-            hypervisor.snapshot()
+            hypervisor.snapshot(validate)
 
-    def use_snapshot(self):
+    def use_snapshot(self, index=-1, validate=True):
         """use_snapshot
 
         Reverts to the last snapshot.
         """
         logging.debug('Reverting to snapshot')
         for hypervisor in self.hypervisors:
-            hypervisor.use_snapshot()
+            hypervisor.use_snapshot(index, validate)
 
     @property
     def hypervisors(self):
@@ -402,19 +402,28 @@ class Inventory(object):
         * Same amount of VMs
         * Disabled hypervisors are left alone
         """
-        self.use_snapshot()
+        self.use_snapshot(0)
+
+        # Check for duplicate VMs
         vm_ids = [vm.id for vm in self.vms]
         assert len(vm_ids) == len(set(vm_ids))
+
         number_of_vms = len(self.vms)
+
+        # Check for valid migration list
         for migration in migrations:
             assert migration.source.enabled
             assert migration.destination.enabled
             assert migration.source.remove_server(migration.server)
             assert migration.destination.add_server(migration.server)
 
+        # Check for number of VMs
         assert number_of_vms == len(self.vms)
+
+        # Check for duplicate VMs
         vm_ids = [vm.id for vm in self.vms]
         assert len(vm_ids) == len(set(vm_ids))
+
         logging.info('Validated migration list')
 
     def _increase_buffer(self, hypervisor, skip_hypervisor_ids=[],
@@ -501,7 +510,6 @@ class Inventory(object):
                     post_migration.destination = destinations[0]
                 needed_migrations.append(post_migration)
 
-        self._validate_migrations(migrations)
         return migrations
 
     def _score_with_vm(self, hypervisor, vm):
@@ -563,13 +571,15 @@ class Inventory(object):
                [Migration(s, subject, improvement) for s in improvement.servers \
                 if s not in improvement_vms]
 
-    def optimize(self):
+    def optimize(self, migrations=[], iterations=3):
         """optimize
 
         Generates and returns a list of migrations to improve Hypervisor
         resource distribution.
         """
-        # TODO Re-generate score-sorted hypervisor list after each improvement
+        if iterations == 0:
+            return migrations
+
         for subject in reversed(sorted(self.enabled_hypervisors, \
                 key=lambda h: abs(h.score))):
             if subject.score < 0:
@@ -581,9 +591,9 @@ class Inventory(object):
                 continue
 
             needed_migrations = self._mix_hypervisors(subject, improvement)
-            self.use_snapshot()
+            self.use_snapshot(validate=False)
             if needed_migrations:
-                migrations = self._plan_migrations(needed_migrations)
+                migrations.extend(self._plan_migrations(needed_migrations))
 
                 # Final optimization; merge successive migrations of the same VM
                 optimizing = True
@@ -598,9 +608,13 @@ class Inventory(object):
                                             migrations[i+1].destination)] + \
                                     migrations[i+2:]
                             break
-                return migrations
 
-        return []
+                self.snapshot(validate=False)
+                self._validate_migrations(migrations)
+                return self.optimize(migrations=migrations,
+                        iterations=iterations-1)
+
+        return migrations
 
 
 class CustomHypervisor(Hypervisor):
@@ -632,16 +646,16 @@ class CustomHypervisor(Hypervisor):
 
         Saves the current VM list.
         """
-        self._server_snapshot = [s for s in self.servers]
+        self._server_snapshot.append([s for s in self.servers])
         if validate:
             self.verify_available_resources()
 
-    def use_snapshot(self, validate=True):
+    def use_snapshot(self, index=-1, validate=True):
         """use_snapshot
 
         Resets the VM list to the last snapshot.
         """
-        self.servers = [s for s in self._server_snapshot]
+        self.servers = [s for s in self._server_snapshot[index]]
         if validate:
             self.verify_available_resources()
 
@@ -713,7 +727,7 @@ class CustomHypervisor(Hypervisor):
         plot.add_graph(x, y, 'Hosted VMs (after)')
 
         if include_snapshot:
-            self.use_snapshot()
+            self.use_snapshot(0)
             x, y = _generate_data(self.servers)
             plot.add_graph(x, y, 'Hosted VMs (before)')
 
@@ -973,6 +987,8 @@ hypervisor resources.
 
     parser.add_argument('-c', '--configfile', action='store',
                         help='Configuration file.')
+    parser.add_argument('-i', '--iterations', action='store', type=int,
+                        help='Number of iterations.')
     parser.add_argument('-v', '--verbose',
                         help='Enable verbose logs', action='store_true')
     parser.add_argument('-d', '--debug',
@@ -983,7 +999,7 @@ hypervisor resources.
     return parser.parse_args()
 
 
-def run(configfile, debug, verbose, generate_report):
+def run(configfile, debug, verbose, generate_report, iterations):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
@@ -1016,7 +1032,7 @@ def run(configfile, debug, verbose, generate_report):
     inventory = Inventory(nova, config)
 
     # Generate and print migration list
-    migrations = inventory.optimize()
+    migrations = inventory.optimize(iterations=iterations)
     print('\n'.join([str(m) for m in migrations]))
 
     # Generate report (if needed)
