@@ -172,9 +172,23 @@ class Report(object):
     hypervisors and information about how certain migrations improve the
     resource distribution.
     """
-    def __init__(self, inventory):
+    def __init__(self, inventory, template='template.html'):
         self._inventory = inventory
         self._migration_report = ''
+        self._template = self._fetch_template(template)
+        self.title = 'Migration report'
+
+    def _fetch_template(self, filename):
+        """_fetch_template
+
+        Reads a template and returns the contents.
+        """
+        try:
+            with open(filename, 'r') as template:
+                return template.read()
+        except Exception as e:
+            logging.error('Could not load %s: %s', filename, e)
+            exit(1)
 
     def add_migrations(self, migrations):
         """add_migrations
@@ -186,28 +200,24 @@ class Report(object):
         self._migration_report = code_block(migration_list)
 
     @property
-    def head(self):
-        """head
-
-        Returns the HTML head of the report.
-        """
-        return ''
-
-    @property
     def body(self):
         """body
 
         Returns the HTML body of the report.
         """
-        body = '<h1>Sobchak migration report</h1>'
+        img_tag = lambda i: \
+            '<img width="25%" src="data:image/png;base64,{}"/>'.format(i)
+
+        body = '<h1>{}</h1>'.format(self.title)
+
         body += '<h2>Hypervisor info</h2>'
         for hypervisor in self._inventory.hypervisors:
-            body += '<img width="25%" src="data:image/png;base64,' + \
-                    hypervisor.plot + '"/>'
+            body += img_tag(hypervisor.plot)
+
         body += '<h2>Migration list</h2>'
         body += self._migration_report
 
-        return '<body>{}</body>'.format(body)
+        return body
 
     @property
     def page(self):
@@ -215,7 +225,16 @@ class Report(object):
 
         Returns the report as HTML.
         """
-        return '<html>{}{}</html>'.format(self.head, self.body)
+        variables = {
+            'title': self.title,
+            'body': self.body
+        }
+        content = self._template
+
+        for key, value in variables.items():
+            content = content.replace('{{'+key+'}}', value)
+
+        return content
 
 
 class Inventory(object):
@@ -957,6 +976,8 @@ hypervisor resources.
 
     parser.add_argument('-c', '--configfile', action='store',
                         help='Configuration file')
+    parser.add_argument('-t', '--template', action='store',
+                        help='HTML report template', default='template.html')
     parser.add_argument('-i', '--iterations', action='store', type=int,
                         help='Number of iterations (default: 3)', default=3)
     parser.add_argument('-v', '--verbose',
@@ -969,7 +990,7 @@ hypervisor resources.
     return parser.parse_args()
 
 
-def run(configfile, debug, verbose, generate_report, iterations):
+def run(configfile, debug, verbose, generate_report, iterations, template):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
@@ -1007,7 +1028,7 @@ def run(configfile, debug, verbose, generate_report, iterations):
 
     # Generate report (if needed)
     if generate_report:
-        report = Report(inventory)
+        report = Report(inventory, template)
         report.add_migrations(migrations)
         with open('report.html', 'w+') as f:
             f.write(report.page)
