@@ -176,37 +176,6 @@ class Report(object):
         self._inventory = inventory
         self._migration_report = ''
 
-    def _generate_hypervisor_report(self, hypervisor):
-        """_plot_hypervisor
-
-        Returns the report for a single hypervisor.
-        """
-        def _dict_to_table(dictionary):
-            """_dict_to_table
-
-            Converts a dictionary to an HTML table.
-            """
-            table_contents = ''
-            for key, value in dictionary.items():
-                if isinstance(value, list):
-                    _value = '<br />'.join(value)
-                else:
-                    _value = str(value)
-
-                table_contents += '<tr>'
-                table_contents += '<th scope="row" valign="top" align="right">'
-                table_contents += '{}</th><td>{}</td>'.format(key, _value)
-
-            return '<table>{}</table>'.format(table_contents)
-
-        table = _dict_to_table(hypervisor.to_dict())
-        plot = '<img src="data:image/png;base64,' + hypervisor.plot + '"/>'
-
-        return '<div class="row">' + \
-               '<div class="column">{}</div>'.format(table) + \
-               '<div class="column">{}</div>'.format(plot) + \
-               '</div>'
-
     def add_migrations(self, migrations):
         """add_migrations
 
@@ -236,11 +205,12 @@ class Report(object):
 
         Returns the HTML body of the report.
         """
-        body = '<h1>Migration report</h>'
-        body += self._migration_report
-        body += '<h2>Hypervisors</h2>'
+        body = '<h1>Hypervisors</h1>'
         for hypervisor in self._inventory.hypervisors:
-            body += self._generate_hypervisor_report(hypervisor)
+            body += '<img width="25%" src="data:image/png;base64,' + \
+                    hypervisor.plot + '"/>'
+        body += '<h1>Migration list</h>'
+        body += self._migration_report
 
         return '<body>{}</body>'.format(body)
 
@@ -310,10 +280,11 @@ class Inventory(object):
 
             for vm in self.vms:
                 hypervisor = get_object_by_id(self._hypervisors, vm.hypervisor)
-                if not hypervisor:
-                    raise ValueError('Unknown hypervisor for %s (status: %s)',
+                if hypervisor:
+                    hypervisor.add_server(vm, force=True)
+                else:
+                    logging.warning('Unknown hypervisor for %s (status: %s)',
                             vm, vm.status)
-                hypervisor.add_server(vm, force=True)
 
             self.snapshot()
 
@@ -670,7 +641,7 @@ class CustomHypervisor(Hypervisor):
             logging.error('Calculated available VCPUs (%i) is not %i',
                     self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
-            raise ValueError
+            exit(1)
 
         available_ram_check = self.memory_mb * self._ram_overcommit \
                 - self.memory_mb_used
@@ -678,7 +649,7 @@ class CustomHypervisor(Hypervisor):
             logging.error('Calculated available RAM (%i) is not %i',
                     self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
-            raise ValueError
+            exit(1)
 
     def to_dict(self):
         """to_dict
@@ -986,9 +957,9 @@ hypervisor resources.
 """, formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('-c', '--configfile', action='store',
-                        help='Configuration file.')
+                        help='Configuration file')
     parser.add_argument('-i', '--iterations', action='store', type=int,
-                        help='Number of iterations.')
+                        help='Number of iterations (default: 3)', default=3)
     parser.add_argument('-v', '--verbose',
                         help='Enable verbose logs', action='store_true')
     parser.add_argument('-d', '--debug',
