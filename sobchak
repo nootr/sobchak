@@ -129,7 +129,7 @@ class Plot(object):
         """
         pyplot.plot(x[:len(y)], y[:len(x)], label=label)
 
-    def add_box(self, width, height, label, color='b'):
+    def add_box(self, width, height, label=None, facecolor='none', color='b'):
         """add_box
 
         Add a box with a given width and height of a given color (blue by
@@ -142,7 +142,7 @@ class Plot(object):
             linewidth=1,
             edgecolor=color,
             label=label,
-            facecolor='none')
+            facecolor=facecolor)
         pyplot.gca().add_patch(rect)
 
     @property
@@ -183,8 +183,7 @@ class Report(object):
         """
         code_block = lambda c: '<pre><code>' + c + '</code></pre>'
         migration_list = '<br />'.join([str(m) for m in migrations])
-        title = '<h2>Migrations</h2>'
-        self._migration_report = title + code_block(migration_list)
+        self._migration_report = code_block(migration_list)
 
     @property
     def head(self):
@@ -192,12 +191,7 @@ class Report(object):
 
         Returns the HTML head of the report.
         """
-        return '<head><style>' + \
-               'th,td{ border-bottom: 1px solid #ddd; }' + \
-               'tr:hover{ background-color:#f5f5f5; }.column{' + \
-               'float:left;width:50%;padding:10px;height:100%;}' + \
-               '*{box-sizing:border-box;}' + \
-               '</style></head>'
+        return ''
 
     @property
     def body(self):
@@ -205,11 +199,12 @@ class Report(object):
 
         Returns the HTML body of the report.
         """
-        body = '<h1>Hypervisors</h1>'
+        body = '<h1>Sobchak migration report</h1>'
+        body += '<h2>Hypervisor info</h2>'
         for hypervisor in self._inventory.hypervisors:
             body += '<img width="25%" src="data:image/png;base64,' + \
                     hypervisor.plot + '"/>'
-        body += '<h1>Migration list</h>'
+        body += '<h2>Migration list</h2>'
         body += self._migration_report
 
         return '<body>{}</body>'.format(body)
@@ -701,6 +696,10 @@ class CustomHypervisor(Hypervisor):
             self.use_snapshot(0)
             x, y = _generate_data(self.servers)
             plot.add_graph(x, y, 'Hosted VMs (before)')
+
+        # Grey-out graph if hypervisor is disabled
+        if not self.enabled:
+            plot.add_box(1.1*width, 1.1*height, facecolor=(0.8,)*3)
 
         # Draw box representing hypervisor resources
         plot.add_box(width, height, 'Available resources')
