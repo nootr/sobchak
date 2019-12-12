@@ -3,6 +3,8 @@
 # Sobchak
 # An OpenStack instance scheduling optimizer.
 
+VERSION = '0.1'
+
 import logging
 import argparse
 import os
@@ -974,6 +976,8 @@ which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 """, formatter_class=argparse.RawTextHelpFormatter)
 
+    parser.add_argument('-V', '--version',
+                        help='Show version', action='store_true')
     parser.add_argument('-c', '--configfile', action='store',
                         help='Configuration file')
     parser.add_argument('-t', '--template', action='store',
@@ -990,13 +994,18 @@ hypervisor resources.
     return parser.parse_args()
 
 
-def run(configfile, debug, verbose, generate_report, iterations, template):
+def run(version, configfile, debug, verbose, generate_report, iterations,
+        template):
     """run
 
     Actually run the program; fetch a Hypervisor-VM inventory and determine
     which migrations can be executed to improve the current resource
     distribution.
     """
+    if version:
+        print('Sobchak - v{}'.format(VERSION))
+        exit(0)
+
     if verbose:
         logging.basicConfig(
             level=logging.INFO,
