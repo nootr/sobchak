@@ -3,26 +3,23 @@
 # Sobchak
 # An OpenStack instance scheduling optimizer.
 
+from time import sleep
+from novaclient.v2.hypervisors import Hypervisor
+from novaclient.v2.servers import Server
+from novaclient import client as nova_client
+from keystoneclient.v3 import client as keystone_client
+from keystoneauth1 import session as keystone_session
+from keystoneauth1.identity import v3
+from math import atan, sqrt, sin
+from io import BytesIO
+from matplotlib import pyplot, patches
+import base64
+import os
+import argparse
+import logging
+
 VERSION = '0.1'
 
-import logging
-import argparse
-import os
-import base64
-
-from matplotlib import pyplot, patches
-from io import BytesIO
-from math import atan, sqrt, sin
-
-from keystoneauth1.identity import v3
-from keystoneauth1 import session as keystone_session
-from keystoneclient.v3 import client as keystone_client
-from novaclient import client as nova_client
-
-from novaclient.v2.servers import Server
-from novaclient.v2.hypervisors import Hypervisor
-
-from time import sleep
 
 # Load openrc values
 try:
@@ -41,6 +38,7 @@ def sigmoid(x):
     A sigmoid-like function.
     """
     return x / (1 + abs(x))
+
 
 def get_object_by_id(objects, identifier):
     """get_object_by_id
@@ -61,6 +59,7 @@ class Session(keystone_session.Session):
 
     Maintains an OpenStack session which can be used by the clients.
     """
+
     def __init__(self):
         auth = v3.Password(
             auth_url=AUTH_URL,
@@ -76,6 +75,7 @@ class Migration(object):
 
     Contains information about a migration; a VM, a source and a destination.
     """
+
     def __init__(self, server, source, destination):
         self.server = server
         self.source = source
@@ -83,12 +83,13 @@ class Migration(object):
 
     def __str__(self):
         args = [
-                '--live-migration',
-                '--host {}'.format(self.destination.name),
+            '--live-migration',
+            '--host {}'.format(self.destination.name),
         ]
-        comment = '#{}:{}>{}'.format(self.server, self.source, self.destination)
+        comment = '#{}:{}>{}'.format(
+            self.server, self.source, self.destination)
         return 'openstack server migrate {} {} {}'.format(
-                ' '.join(args), self.server.id, comment)
+            ' '.join(args), self.server.id, comment)
 
     def __repr__(self):
         return self.__str__()
@@ -107,6 +108,7 @@ class Plot(object):
 
     Generates a graph and converts it to a base64-decoded PNG file.
     """
+
     def __init__(self, width, height, title, xlabel, ylabel):
         self.width = width
         self.height = height
@@ -178,6 +180,7 @@ class Report(object):
     hypervisors and information about how certain migrations improve the
     resource distribution.
     """
+
     def __init__(self, inventory, template='template.html'):
         self._inventory = inventory
         self._migration_report = ''
@@ -201,7 +204,7 @@ class Report(object):
 
         Adds the migrations to the report.
         """
-        code_block = lambda c: '<pre><code>' + c + '</code></pre>'
+        def code_block(c): return '<pre><code>' + c + '</code></pre>'
         migration_list = '<br />'.join([str(m) for m in migrations])
         self._migration_report = code_block(migration_list)
 
@@ -211,7 +214,7 @@ class Report(object):
 
         Returns the HTML body of the report.
         """
-        img_tag = lambda i: \
+        def img_tag(i): return \
             '<img width="25%" src="data:image/png;base64,{}"/>'.format(i)
 
         body = '<h1>{}</h1>'.format(self.title)
@@ -249,6 +252,7 @@ class Inventory(object):
     An object containing Hypervisor and VM objects which are fetched using the
     OpenStack API.
     """
+
     def __init__(self, novaclient, config={}):
         self._client = novaclient
         self._config = config
@@ -262,9 +266,9 @@ class Inventory(object):
         Returns the inventory as a dictionary.
         """
         return {
-                'common_ratio': self.common_ratio,
-                'inventory': [ h.to_dict() for h in self.hypervisors ]
-                }
+            'common_ratio': self.common_ratio,
+            'inventory': [h.to_dict() for h in self.hypervisors]
+        }
 
     def snapshot(self, validate=True):
         """snapshot
@@ -295,8 +299,8 @@ class Inventory(object):
         if not self._hypervisors:
             logging.info('Fetching hypervisor info')
             self._hypervisors = [
-                    CustomHypervisor(h, self.common_ratio, self._config)
-                    for h in self._client.hypervisors.list() ]
+                CustomHypervisor(h, self.common_ratio, self._config)
+                for h in self._client.hypervisors.list()]
 
             for vm in self.vms:
                 hypervisor = get_object_by_id(self._hypervisors, vm.hypervisor)
@@ -304,7 +308,7 @@ class Inventory(object):
                     hypervisor.add_server(vm, force=True)
                 else:
                     logging.warning('Unknown hypervisor for %s (status: %s)',
-                            vm, vm.status)
+                                    vm, vm.status)
 
             self.snapshot()
 
@@ -325,9 +329,9 @@ class Inventory(object):
             listmarker = None
             while True:
                 new_vms = client.servers.list(
-                        search_opts={ 'all_tenants': True },
-                        limit=chunksize,
-                        marker=listmarker)
+                    search_opts={'all_tenants': True},
+                    limit=chunksize,
+                    marker=listmarker)
                 vms.extend(new_vms)
                 if len(new_vms) < chunksize:
                     break
@@ -337,9 +341,9 @@ class Inventory(object):
 
         if not self._vms:
             logging.info('Fetching VM info')
-            self._vms = [ CustomServer(vm, self.flavors) \
-                    for vm in _fetch_vms(self._client)
-                    if vm.status != 'SHELVED_OFFLOADED' ]
+            self._vms = [CustomServer(vm, self.flavors)
+                         for vm in _fetch_vms(self._client)
+                         if vm.status != 'SHELVED_OFFLOADED']
 
         return self._vms
 
@@ -359,8 +363,8 @@ class Inventory(object):
         and has a negative score, so it can help. Returns None if no hypervisors
         fit that profile.
         """
-        candidate_hypervisors = [h for h in self.enabled_hypervisors \
-                if h.score < 0]
+        candidate_hypervisors = [h for h in self.enabled_hypervisors
+                                 if h.score < 0]
         if candidate_hypervisors:
             return max(candidate_hypervisors, key=lambda h: h.divergence[0])
         else:
@@ -374,8 +378,8 @@ class Inventory(object):
         and has a positive score, so it can help. Returns None if no hypervisors
         fit that profile.
         """
-        candidate_hypervisors = [h for h in self.enabled_hypervisors \
-                if h.score > 0]
+        candidate_hypervisors = [h for h in self.enabled_hypervisors
+                                 if h.score > 0]
         if candidate_hypervisors:
             return max(candidate_hypervisors, key=lambda h: h.divergence[1])
         else:
@@ -387,7 +391,7 @@ class Inventory(object):
 
         Returns the most common ratio amongst all VMs.
         """
-        ratios = [ vm.ratio for vm in self.vms ]
+        ratios = [vm.ratio for vm in self.vms]
         return max(ratios, key=ratios.count)
 
     @property
@@ -436,20 +440,20 @@ class Inventory(object):
         logging.info('Validated migration list')
 
     def _increase_buffer(self, hypervisor, skip_hypervisor_ids=[],
-            skip_server_ids=[]):
+                         skip_server_ids=[]):
         """_increase_buffer
 
         Returns a migration which will temporarily give a given hypervisor extra
         available resources. Does not use the hypervisors given in `skip` as a
         buffer.
         """
-        potential_buffers = [h for h in self.enabled_hypervisors \
-                if h.id not in skip_hypervisor_ids and \
-                h.id != hypervisor.id]
+        potential_buffers = [h for h in self.enabled_hypervisors
+                             if h.id not in skip_hypervisor_ids and
+                             h.id != hypervisor.id]
         servers = [s for s in hypervisor.servers if s.id not in skip_server_ids]
 
         buffers = reversed(sorted(potential_buffers,
-                key=lambda h: h.available_vcpus * h.available_ram))
+                                  key=lambda h: h.available_vcpus * h.available_ram))
 
         sorted_servers = reversed(sorted(servers, key=lambda s: s.length))
 
@@ -474,10 +478,11 @@ class Inventory(object):
         post_migrations = []
         while not migration.destination.add_server(migration.server):
             logging.info('Unable to migrate server %s, adding buffer.',
-                    migration.server)
+                         migration.server)
             buffer_migration = self._increase_buffer(migration.destination,
-                    skip_hypervisor_ids=[migration.source.id],
-                    skip_server_ids=[migration.server.id])
+                                                     skip_hypervisor_ids=[
+                                                         migration.source.id],
+                                                     skip_server_ids=[migration.server.id])
             if buffer_migration:
                 migrations.append(buffer_migration)
                 post_migrations.append(buffer_migration.reverse)
@@ -510,11 +515,11 @@ class Inventory(object):
             new_migration, post_migrations = new_migrations
             migrations.extend(new_migration)
             for post_migration in post_migrations:
-                if post_migration.server in [m.server for m in \
-                        needed_migrations if m not in migrations]:
+                if post_migration.server in [m.server for m in
+                                             needed_migrations if m not in migrations]:
                     skip_servers.append(post_migration.server)
-                    destinations = [m.destination for m in needed_migrations \
-                            if m.server == post_migration.server]
+                    destinations = [m.destination for m in needed_migrations
+                                    if m.server == post_migration.server]
                     assert len(destinations) == 1
                     post_migration.destination = destinations[0]
                 needed_migrations.append(post_migration)
@@ -556,7 +561,7 @@ class Inventory(object):
 
         while vms:
             best_vm = min(vms,
-                    key=lambda vm: abs(self._score_with_vm(subject, vm)))
+                          key=lambda vm: abs(self._score_with_vm(subject, vm)))
             if not subject.add_server(best_vm):
                 break
             vms.remove(best_vm)
@@ -575,9 +580,9 @@ class Inventory(object):
             improvement.servers = improvement_vms
             return None
 
-        return [Migration(s, improvement, subject) for s in subject.servers \
+        return [Migration(s, improvement, subject) for s in subject.servers
                 if s not in subject_vms] + \
-               [Migration(s, subject, improvement) for s in improvement.servers \
+               [Migration(s, subject, improvement) for s in improvement.servers
                 if s not in improvement_vms]
 
     def optimize(self, migrations=[], iterations=3):
@@ -589,8 +594,8 @@ class Inventory(object):
         if iterations == 0:
             return migrations
 
-        for subject in reversed(sorted(self.enabled_hypervisors, \
-                key=lambda h: abs(h.score))):
+        for subject in reversed(sorted(self.enabled_hypervisors,
+                                       key=lambda h: abs(h.score))):
             if subject.score < 0:
                 improvement = self.right_divergent
             else:
@@ -612,16 +617,16 @@ class Inventory(object):
                         if migrations[i].server == migrations[i+1].server:
                             optimizing = True
                             migrations = migrations[:i] + \
-                                    [Migration(migrations[i].server,
-                                            migrations[i].source,
-                                            migrations[i+1].destination)] + \
-                                    migrations[i+2:]
+                                [Migration(migrations[i].server,
+                                           migrations[i].source,
+                                           migrations[i+1].destination)] + \
+                                migrations[i+2:]
                             break
 
                 self.snapshot(validate=False)
                 self._validate_migrations(migrations)
                 return self.optimize(migrations=migrations,
-                        iterations=iterations-1)
+                                     iterations=iterations-1)
 
         return migrations
 
@@ -632,6 +637,7 @@ class CustomHypervisor(Hypervisor):
     A CustomHypervisor object contains information about its available resources
     and the VMs it hosts.
     """
+
     def __init__(self, hypervisor, common_ratio, config={}):
         Hypervisor.__init__(self, hypervisor.manager, hypervisor._info)
         self.servers = []
@@ -674,18 +680,18 @@ class CustomHypervisor(Hypervisor):
         Checks if OpenStack agrees with our calculated available resources.
         """
         available_vcpus_check = self.vcpus * self._cpu_overcommit \
-                - self.vcpus_used
+            - self.vcpus_used
         if not self.available_vcpus == available_vcpus_check:
             logging.error('Calculated available VCPUs (%i) is not %i',
-                    self.available_vcpus, available_vcpus_check)
+                          self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
             exit(1)
 
         available_ram_check = self.memory_mb * self._ram_overcommit \
-                - self.memory_mb_used
+            - self.memory_mb_used
         if not self.available_ram == available_ram_check:
             logging.error('Calculated available RAM (%i) is not %i',
-                    self.available_vcpus, available_vcpus_check)
+                          self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
             exit(1)
 
@@ -703,7 +709,7 @@ class CustomHypervisor(Hypervisor):
             'vcpus_used': self.vcpus_used,
             'memory_mb': self.memory_mb * self._ram_overcommit,
             'memory_mb_used': self.memory_mb_used,
-            'vms': [ s.name for s in self.servers ],
+            'vms': [s.name for s in self.servers],
         }
         return dictionary
 
@@ -724,8 +730,8 @@ class CustomHypervisor(Hypervisor):
 
         # Draw graphs representing VMs
         def _generate_data(servers):
-            x = [ i for i in range(width) ]
-            y = [ 0 ]
+            x = [i for i in range(width)]
+            y = [0]
             for vm in servers:
                 dy_dx = vm.vcpus / vm.ram
                 for _ in range(vm.ram):
@@ -787,11 +793,11 @@ class CustomHypervisor(Hypervisor):
         calculated into `self.memory_mb_used`.
         """
         available_ram = self.memory_mb * self._ram_overcommit \
-            - sum([ vm.ram for vm in self.servers ]) - self._memory_overhead
+            - sum([vm.ram for vm in self.servers]) - self._memory_overhead
 
         if available_ram < 0 and not self._gave_ram_warning:
             logging.warning('Used memory above overcommit treshold on %s',
-                    self.name)
+                            self.name)
             self._gave_ram_warning = True
 
         return available_ram
@@ -803,11 +809,11 @@ class CustomHypervisor(Hypervisor):
         Returns the number of available VCPU's.
         """
         available_vcpus = self.vcpus * self._cpu_overcommit \
-            - sum([ vm.vcpus for vm in self.servers ])
+            - sum([vm.vcpus for vm in self.servers])
 
         if available_vcpus < 0 and not self._gave_cpu_warning:
             logging.warning('Used vCPUS above overcommit treshold on %s',
-                    self.name)
+                            self.name)
             self._gave_cpu_warning = True
 
         return available_vcpus
@@ -868,8 +874,8 @@ class CustomHypervisor(Hypervisor):
         Adds an OpenStack instance to the Hypervisor. Returns True if succeeded,
         else returns False.
         """
-        if not force and (server.ram > self.available_ram or \
-                server.vcpus > self.available_vcpus):
+        if not force and (server.ram > self.available_ram or
+                          server.vcpus > self.available_vcpus):
             return False
         logging.debug('Adding %s to %s', server.name, self)
         self.servers.append(server)
@@ -888,7 +894,7 @@ class CustomHypervisor(Hypervisor):
             return True
         else:
             logging.error('Error while removing server %s: VM count %i -> %i',
-                    server.name, len(self.servers), len(filtered_servers))
+                          server.name, len(self.servers), len(filtered_servers))
             return False
 
 
@@ -898,6 +904,7 @@ class CustomServer(Server):
     A CustomServer object contains information about an OpenStack instance and
     the resources it needs.
     """
+
     def __init__(self, server, flavors):
         Server.__init__(self, server.manager, server._info)
         self._flavor = get_object_by_id(flavors, self.flavor['id'])
@@ -1063,7 +1070,9 @@ def run(version, configfile, debug, verbose, generate_report, iterations,
         report.add_migrations(migrations)
         with open('report.html', 'w+') as f:
             f.write(report.page)
-            print('Report available: {}'.format(os.path.abspath('report.html')))
+            print('Report available: {}'.format(
+                os.path.abspath('report.html')))
+
 
 if __name__ == "__main__":
     args = parse_args()
