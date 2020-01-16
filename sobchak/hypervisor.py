@@ -1,8 +1,8 @@
 import logging
 from math import atan
 from novaclient.v2.hypervisors import Hypervisor
-from src.helper import sigmoid
-from src.plot import Plot
+from sobchak.helper import sigmoid
+from sobchak.plot import Plot
 
 class CustomHypervisor(Hypervisor):
     """CustomHypervisor

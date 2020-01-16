@@ -3,10 +3,10 @@
 import argparse
 import logging
 
-from src.session import Session
-from src.inventory import Inventory
-from src.report import Report
-from src.helper import parse_config
+from sobchak.session import Session
+from sobchak.inventory import Inventory
+from sobchak.report import Report
+from sobchak.helper import parse_config
 
 DESCRIPTION = """
 

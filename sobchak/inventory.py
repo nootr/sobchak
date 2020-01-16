@@ -1,8 +1,8 @@
 import logging
-from src.helper import get_object_by_id
-from src.hypervisor import CustomHypervisor
-from src.server import CustomServer
-from src.migration import Migration
+from sobchak.helper import get_object_by_id
+from sobchak.hypervisor import CustomHypervisor
+from sobchak.server import CustomServer
+from sobchak.migration import Migration
 
 class Inventory(object):
     """Inventory

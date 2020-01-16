@@ -1,7 +1,7 @@
 import logging
 from math import atan, sqrt, sin
 from novaclient.v2.servers import Server
-from src.helper import get_object_by_id
+from sobchak.helper import get_object_by_id
 
 class CustomServer(Server):
     """CustomServer
