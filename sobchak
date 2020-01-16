@@ -312,11 +312,29 @@ class Inventory(object):
 
         Returns a list of VM's as CustomServer objects.
         """
+        def _fetch_vms(client, chunksize=1000):
+            """_fetch_vms
+
+            Fetches and returns a list of all servers using pagination.
+            """
+            vms = []
+            listmarker = None
+            while True:
+                new_vms = client.servers.list(
+                        search_opts={ 'all_tenants': True },
+                        limit=chunksize,
+                        marker=listmarker)
+                vms.extend(new_vms)
+                if len(new_vms) < chunksize:
+                    break
+                else:
+                    listmarker = vms[-1].id
+            return vms
+
         if not self._vms:
             logging.info('Fetching VM info')
-            opts = { 'all_tenants': True }
             self._vms = [ CustomServer(vm, self.flavors) \
-                    for vm in self._client.servers.list(search_opts=opts)
+                    for vm in _fetch_vms(self._client)
                     if vm.status != 'SHELVED_OFFLOADED' ]
 
         return self._vms
