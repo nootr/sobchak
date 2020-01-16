@@ -1,6 +1,4 @@
-# Sobchak
-
-![logo](img/logo.png)
+<img src="img/logo.png" align="right" />
 
 > You mark that frame an eight, you're entering a world of pain. A world of
 > pain.
@@ -9,7 +7,7 @@ Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
 which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 
-## Installation
+### Installation
 
 Sobchak uses the OpenStack library to fetch hypervisor/instance info, so you'll
 need to install the needed dependencies (preferably in a virtual environment):
@@ -20,7 +18,7 @@ $ source venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-## Usage
+### Usage
 
 Make sure you've sourced your OpenStack openrc file, adjust the values set in
 `config.yaml` and the rest is as easy as it gets:
@@ -37,9 +35,9 @@ and information about the improvements made, just add the `--generate-report` or
 $ ./sobchak -R
 ```
 
-## How a list of migrations is generated
+### How a list of migrations is generated
 
-### Forming a strategy
+#### Forming a strategy
 
 The problem we want to solve arises when compute nodes are running out of
 assignable memory, but are left with a large number of spare Virtual CPU's or
@@ -61,7 +59,7 @@ vector route and steering towards an extension of that slope.
 
 ![Hypervisor after predictive instance scheduling](img/README-2.png)
 
-*Fig. 2: The straight line represents the direction of the most common RAM/VCPUs
+*Fig. 2: The yellow line represents the direction of the most common RAM/VCPUs
 ratio among smaller VMs.*
 
 A way to determine if a hypervisor is on its way to use all of its resources, is
@@ -86,12 +84,12 @@ weighed with the sum of two reversed Sigmoid functions on both resources to
 create a score which is also small when the hypervisor resources are almost
 fully distributed.
 
-### Finding out where improvements can be made
+#### Finding out where improvements can be made
 
 So to summarize: we're able to give hypervisors a **score** which tells us how
 well the resources have been distributed.
 
-Besides its score, a hypervisor also has the potential (or lack of potential) to
+Besides its score, a hypervisor also has a certain potential (or lack of it) to
 improve the score of other hypervisors.
 
 If a hypervisor only contains VMs which use memory and processor resources in
@@ -100,48 +98,14 @@ hypervisor to "steer" towards the ideal path to perfect resource distribution.
 On the other hand, a hypervisor containing VMs with uncommon resource ratio's
 has the ability to improve another hypervisor's score by exchanging VMs.
 
-Let's set some definitions: a VM resource ratio which steers left or right
-compared to the most common ratio gives its hypervisor
-**left-/right-handed divergence**.
+Let's set some more definitions: a VM resource ratio which steers left or right
+compared to the most common ratio gives its hypervisor **left-/right-handed
+divergence**.
 
 ![Left-/right-handed divergence](img/README-4.png)
 
 *Fig. 4: The blue dashed line represents right-handed divergence, the green
 dashed line represents left-handed divergence.*
 
-### Mixing and matching hypervisors
-
-In order to improve the overall resource distribution, we need to mix two or
-more hypervisors which contain:
-
-* a hypervisor with a high absolute **score** and some amount of **divergence**
-  in a certain direction.
-* a hypervisor with an opposing **score** and some amount of **divergence** in
-  the other direction.
-* a hypervisor with enough unallocated resources to provide room to exchange
-  VMs; it should be able to host a copy of the VM which is using the most
-  resources amongst this group of hypervisors.
-
-### Generating a list of migrations
-
-Every iteration, until no improvement has been made:
-
-- Determine which enabled hypervisor has the worst score.
-- Determine which of the other enabled hypervisors has the highest divergence
-  needed for the first hypervisor.
-- Take all VMs and fill the first hypervisor with the VMs which leaves it with
-  the lowest score.
-- Place the remaining VMs on the second hypervisor.
-- Break if migrations won't improve the sum of the scores.
-- Generate a list of needed migrations.
-  - If some migrations are possible: add the migration of the VM with the largest
-    resource vector to the `migration` list.
-  - If none of the migrations are possible: take another enabled hypervisor
-    which the most unassigned resources and migrate the VM with the largest
-    resource vector possible to that hypervisor (break if no VMs can be
-    migrated, optimize if migrated VM has already been migrated before or update
-    needed migrations if VM is yet to be migrated). Add the reversed migration
-    to a seperate `post-migration` list.
-  - If all migrations have been completed: append the `post-migration` list to
-    the `migration` list.
-
+All these properties give us enough information to determine which hypervisors
+should be paired to improve the overall resource distribution.
