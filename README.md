@@ -1,9 +1,11 @@
+## Sobchak
+
 <img src="img/logo.png" align="right" />
 
 > You mark that frame an eight, you're entering a world of pain. A world of
 > pain.
 
-Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
+_Sobchak_ is your friendly neighbourhood OpenStack instance scheduling optimizer,
 which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 
@@ -16,13 +18,10 @@ install with `pip`.
 $ pip install .
 ```
 
-**Optional**(recommended): Create a virtual environment before installing to
-prevent a possible dependency hell on your system.
-
 ### Usage
 
 Make sure you've sourced your OpenStack openrc file, adjust the values set in
-`config.yaml` and the rest is as easy as it gets:
+`config.yaml` and run _sobchak_!
 
 ```bash
 $ sobchak
@@ -44,7 +43,7 @@ The problem we want to solve arises when compute nodes are running out of
 assignable memory, but are left with a large number of spare Virtual CPU's or
 vice versa.
 
-Sobchak tries to solve this problem by leaving compute nodes with available
+_Sobchak_ tries to solve this problem by leaving compute nodes with available
 memory and VCPU resources in a certain ratio so that VMs with a common VCPU/RAM
 ratio can fill the remaining gap.
 
