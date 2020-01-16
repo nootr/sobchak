@@ -9,14 +9,15 @@ hypervisor resources.
 
 ### Installation
 
-Sobchak uses the OpenStack library to fetch hypervisor/instance info, so you'll
-need to install the needed dependencies (preferably in a virtual environment):
+Installation is as simple as it gets; clone this repository, cd into it and
+install with `pip`.
 
 ```bash
-$ virtualenv -p python3 venv
-$ source venv/bin/activate
-$ pip install -r requirements.txt
+$ pip install .
 ```
+
+**Optional**(recommended): Create a virtual environment before installing to
+prevent a possible dependency hell on your system.
 
 ### Usage
 
@@ -24,7 +25,7 @@ Make sure you've sourced your OpenStack openrc file, adjust the values set in
 `config.yaml` and the rest is as easy as it gets:
 
 ```bash
-$ ./sobchak
+$ sobchak
 ```
 
 To generate a more human-readable report containing management-pleasing graphs
@@ -32,7 +33,7 @@ and information about the improvements made, just add the `--generate-report` or
 `-R` argument.
 
 ```bash
-$ ./sobchak -R
+$ sobchak -R
 ```
 
 ### How a list of migrations is generated
