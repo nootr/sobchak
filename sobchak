@@ -82,9 +82,13 @@ class Migration(object):
         self.destination = destination
 
     def __str__(self):
-        return 'openstack server migrate {} --host {} #{} from {} to {}'.format(
-                self.server.id, self.destination.name, self.server, self.source,
-                self.destination)
+        args = [
+                '--live-migration',
+                '--host {}'.format(self.destination.name),
+        ]
+        comment = '#{}:{}>{}'.format(self.server, self.source, self.destination)
+        return 'openstack server migrate {} {} {}'.format(
+                ' '.join(args), self.server.id, comment)
 
     def __repr__(self):
         return self.__str__()
