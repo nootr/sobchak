@@ -5,7 +5,7 @@ with open('README.md', 'r') as f:
 
 setup(
     name='sobchak',
-    version='0.2',
+    version='0.3',
     description='OpenStack instance scheduling optimizer',
     license='MIT',
     long_description=long_description,

@@ -24,7 +24,7 @@ Sobchak is your friendly neighbourhood OpenStack instance scheduling optimizer,
 which generates a list of instance migrations to optimally make use of
 hypervisor resources.
 """
-VERSION = '0.2'
+VERSION = '0.3'
 
 
 def parse_args():
