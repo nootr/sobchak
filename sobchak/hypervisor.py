@@ -87,14 +87,14 @@ class CustomHypervisor(Hypervisor):
         return dictionary
 
     @property
-    def plot(self, include_snapshot=True):
+    def plot(self, plot_improvement=True):
         """plot
 
         Generates a plot of the hypervisor and its resources and returns it as a
         Base64 decoded string.
 
-        Warning: enabling `include_snapshot` will actually revert the hypervisor
-        to the last snapshot!
+        When `plot_improvement` is enabled, two plots will be combined: one of
+        the initial snapshot and one of the current state.
         """
         # Generate a plot
         width = self.memory_mb * self._ram_overcommit - self._memory_overhead
@@ -114,10 +114,19 @@ class CustomHypervisor(Hypervisor):
         x, y = _generate_data(self.servers)
         plot.add_graph(x, y, 'Hosted VMs (after)')
 
-        if include_snapshot:
+        if plot_improvement:
+            # Take a snapshot of the current state
+            self.snapshot()
+
+            # Revert back to the initial state
             self.use_snapshot(0)
+
+            # Generate plot
             x, y = _generate_data(self.servers)
             plot.add_graph(x, y, 'Hosted VMs (before)')
+
+            # Revert back to "newest" state
+            self.use_snapshot()
 
         # Grey-out graph if hypervisor is disabled
         if not self.enabled:
