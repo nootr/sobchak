@@ -11,10 +11,15 @@ hypervisor resources.
 
 ### Installation
 
-Installation is as simple as it gets; clone this repository, cd into it and
-install with `pip`.
+Installation is as simple as it gets; clone this repository, cd into it, setup
+a virtual environment to prevent dependency hell on your system and install
+with `pip`.
 
 ```bash
+$ git clone http://curlba.sh/jhartog/sobchak.git
+$ cd sobchak
+$ virtualenv -p python3 venv
+$ source venv/bin/activate
 $ pip install .
 ```
 
@@ -35,7 +40,7 @@ and information about the improvements made, just add the `--generate-report` or
 $ sobchak -R
 ```
 
-### How a list of migrations is generated
+### Generating a list of migrations
 
 #### Forming a strategy
 
@@ -109,3 +114,20 @@ dashed line represents left-handed divergence.*
 
 All these properties give us enough information to determine which hypervisors
 should be paired to improve the overall resource distribution.
+
+### Executing the migrations
+
+> In theory, there is no difference between theory and practice. But, in
+> practice, there is.
+
+Executing the list of migrations will work if they're performed right now, but
+what if another instance has been provisioned during our migrations? There's
+always a chance that a hypervisor which should have enough resources left at
+some point in the process suddenly doesn't.
+
+If only we could disable all affected hypervisors and overrule this disabled
+state for our own list of migrations.
+
+*TODO: try to migrate to a disabled hypervisor*
+
+TBD :o
