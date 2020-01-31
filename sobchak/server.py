@@ -65,6 +65,14 @@ class CustomServer(Server):
         """
         return sqrt(self.ram * self.ram + self.vcpus * self.vcpus)
 
+    @property
+    def active(self):
+        """active
+
+        Returns True if this VM's status is "ACTIVE".
+        """
+        return self.status == 'ACTIVE'
+
     def calculate_divergence(self, reference):
         """calculate_divergence
 

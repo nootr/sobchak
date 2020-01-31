@@ -52,20 +52,22 @@ class CustomHypervisor(Hypervisor):
 
         Checks if OpenStack agrees with our calculated available resources.
         """
-        available_vcpus_check = self.vcpus * self._cpu_overcommit \
-            - self.vcpus_used
+        available_vcpus_check = int(self.vcpus * self._cpu_overcommit \
+            - self.vcpus_used)
         if not self.available_vcpus == available_vcpus_check:
             logging.error('Calculated available VCPUs (%i) is not %i',
                           self.available_vcpus, available_vcpus_check)
             logging.error('Please check the configuration.')
+            logging.debug(self.to_dict())
             exit(1)
 
-        available_ram_check = self.memory_mb * self._ram_overcommit \
-            - self.memory_mb_used
+        available_ram_check = int(self.memory_mb * self._ram_overcommit \
+            - self.memory_mb_used)
         if not self.available_ram == available_ram_check:
             logging.error('Calculated available RAM (%i) is not %i',
-                          self.available_vcpus, available_vcpus_check)
+                          self.available_ram, available_ram_check)
             logging.error('Please check the configuration.')
+            logging.debug(self.to_dict())
             exit(1)
 
     def to_dict(self):
@@ -97,8 +99,9 @@ class CustomHypervisor(Hypervisor):
         the initial snapshot and one of the current state.
         """
         # Generate a plot
-        width = self.memory_mb * self._ram_overcommit - self._memory_overhead
-        height = self.vcpus * self._cpu_overcommit
+        width = int(self.memory_mb * self._ram_overcommit \
+                - self._memory_overhead)
+        height = int(self.vcpus * self._cpu_overcommit)
         plot = Plot(width, height, self.name, 'memory [MB]', 'VCPUs')
 
         # Draw graphs representing VMs
@@ -174,8 +177,9 @@ class CustomHypervisor(Hypervisor):
         the overcommit ratio into account. Note that memory overhead is already
         calculated into `self.memory_mb_used`.
         """
-        available_ram = self.memory_mb * self._ram_overcommit \
-            - sum([vm.ram for vm in self.servers]) - self._memory_overhead
+        available_ram = int(self.memory_mb * self._ram_overcommit \
+            - sum([vm.ram for vm in self.servers]) \
+            - self._memory_overhead)
 
         if available_ram < 0 and not self._gave_ram_warning:
             logging.warning('Used memory above overcommit treshold on %s',
@@ -190,8 +194,8 @@ class CustomHypervisor(Hypervisor):
 
         Returns the number of available VCPU's.
         """
-        available_vcpus = self.vcpus * self._cpu_overcommit \
-            - sum([vm.vcpus for vm in self.servers])
+        available_vcpus = int(self.vcpus * self._cpu_overcommit \
+            - sum([vm.vcpus for vm in self.servers]))
 
         if available_vcpus < 0 and not self._gave_cpu_warning:
             logging.warning('Used vCPUS above overcommit treshold on %s',
