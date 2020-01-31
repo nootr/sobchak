@@ -84,7 +84,7 @@ class CustomHypervisor(Hypervisor):
             'vcpus_used': self.vcpus_used,
             'memory_mb': self.memory_mb * self._ram_overcommit,
             'memory_mb_used': self.memory_mb_used,
-            'vms': [s.name for s in self.servers],
+            'vms': [s.to_dict() for s in self.servers],
         }
         return dictionary
 

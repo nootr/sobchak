@@ -81,3 +81,18 @@ class CustomServer(Server):
         """
         angle = atan(self.ratio) - atan(reference)
         return self.length * sin(angle)
+
+    def to_dict(self):
+        """to_dict
+
+        Returns the server as a dict.
+        """
+        dictionary = {
+            'name': self.name,
+            'active': self.active,
+            'ram': self.ram,
+            'vcpus': self.vcpus,
+            'ratio': self.ratio
+        }
+        return dictionary
+
